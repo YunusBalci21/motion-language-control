@@ -89,7 +89,7 @@ def train_curriculum(agent: MotionLanguageAgent,
                      config: dict,
                      exp_dir: Path) -> dict:
     """Train agent on curriculum of instructions"""
-    print(f"\n🎓 Training curriculum with {len(instructions)} instructions")
+    print(f"\n Training curriculum with {len(instructions)} instructions")
 
     all_results = {}
     model_paths = {}
@@ -175,7 +175,7 @@ def main():
     if args.quick_test:
         config['training']['total_timesteps'] = 5000
         config['evaluation']['n_eval_episodes'] = 3
-        print("⚡ Quick test mode: reduced timesteps")
+        print(" Quick test mode: reduced timesteps")
 
     # Set device
     if args.device == 'auto':

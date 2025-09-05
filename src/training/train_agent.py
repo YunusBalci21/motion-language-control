@@ -32,7 +32,8 @@ def main():
     # TODO: Start training loop
 
     print(" Training started!")
-    print("️  This is a placeholder")
+    print(" This is a placeholder")
+
 
 if __name__ == "__main__":
     main()

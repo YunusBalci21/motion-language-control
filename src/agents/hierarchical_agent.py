@@ -132,7 +132,6 @@ class LanguageMotionRewardWrapper(gym.Wrapper):
             instruction_embedding = instruction_embedding.to(self.device)
 
             # Handle dimension mismatch - project motion to language space
-            # Handle dimension mismatch - project motion to language space
             if motion_embedding.shape[-1] != instruction_embedding.shape[-1]:
                 # Simple projection to match dimensions
                 if motion_embedding.shape[-1] == 256 and instruction_embedding.shape[-1] == 512:
@@ -145,13 +144,13 @@ class LanguageMotionRewardWrapper(gym.Wrapper):
                         padding = torch.zeros(motion_embedding.shape[0], padding_size, device=self.device)
                         motion_embedding = torch.cat([motion_embedding, padding], dim=1)
                 elif motion_embedding.shape[-1] == 512 and instruction_embedding.shape[-1] == 256:
-                    # Truncate motion embedding to 256 dimensions  
+                    # Truncate motion embedding to 256 dimensions
                     motion_embedding = motion_embedding[:256]
                 else:
                     # Generic case: use linear projection
                     if not hasattr(self, 'motion_projector'):
                         self.motion_projector = torch.nn.Linear(
-                            motion_embedding.shape[-1], 
+                            motion_embedding.shape[-1],
                             instruction_embedding.shape[-1]
                         ).to(self.device)
                     motion_embedding = self.motion_projector(motion_embedding)
@@ -419,7 +418,7 @@ class MotionLanguageAgent:
             print(f"Loaded model: {model_path}")
 
         if self.rl_agent is None:
-            print("⚠️ No trained agent! Training a quick baseline...")
+            print(" No trained agent! Training a quick baseline...")
             self.train("walk forward", total_timesteps=10000)
 
         # Demo each instruction
