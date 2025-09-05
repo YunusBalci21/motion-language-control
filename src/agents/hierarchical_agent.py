@@ -1,6 +1,6 @@
 """
 Hierarchical Motion-Language Agent
-Real integration with MotionGPT tokenizer and AnySkill-inspired hierarchical structure
+Integration with MotionGPT tokenizer and AnySkill hierarchical structure
 """
 
 import sys
