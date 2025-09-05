@@ -1,6 +1,5 @@
 """
 MotionGPT Integration - VQ-VAE Motion Tokenizer
-This connects to the actual MotionGPT VQ-VAE implementation
 """
 
 import sys
@@ -32,7 +31,7 @@ except ImportError as e:
 
 class MotionTokenizer:
     """
-    Real integration with MotionGPT's VQ-VAE for motion tokenization
+    Integration with MotionGPT's VQ-VAE for motion tokenization
 
     This class loads and uses the actual MotionGPT VQ-VAE model for:
     1. Encoding motion sequences to discrete tokens
