@@ -1,4 +1,4 @@
-# Motion-Language Control
+# Motion-Language Control - ISA Project
 
 **Continuous Control from Open-Vocabulary Feedback**
 
