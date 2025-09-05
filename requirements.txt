@@ -45,5 +45,5 @@ jupyter
 ipykernel
 
 # Optional: for advanced motion processing
-# smplx  # Uncomment if using SMPL body models
+
 
