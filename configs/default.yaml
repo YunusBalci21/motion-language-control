@@ -1,0 +1,31 @@
+# Experiment Configuration Template
+experiment:
+  name: "motion_language_baseline"
+  seed: 42
+
+environment:
+  name: "Humanoid-v4"
+  max_episode_steps: 1000
+
+model:
+  motion_tokenizer:
+    vocab_size: 512
+    hidden_dim: 256
+  language_encoder:
+    model_name: "t5-small"
+    freeze_weights: false
+
+training:
+  algorithm: "PPO"
+  total_timesteps: 100000
+  learning_rate: 3e-4
+  batch_size: 64
+
+evaluation:
+  eval_freq: 10000
+  n_eval_episodes: 10
+
+logging:
+  use_wandb: true
+  project_name: "motion-language-control"
+  log_dir: "./logs"

@@ -1,0 +1,39 @@
+name: motion-lang-control
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pip
+  - numpy=2.0.2
+  - scipy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - pyyaml
+  - tqdm
+  - gymnasium[mujoco]
+  - jupyter
+  - ipykernel
+  - pytest
+  - black
+  - flake8
+  - spacy=3.8.7
+  - pip:
+      - torch==2.5.1+cu121
+      - torchvision==0.20.1+cu121
+      - torchaudio==2.5.1+cu121
+      - mujoco==3.1.6
+      - dm-control
+      - stable-baselines3[extra]
+      - sb3-contrib
+      - transformers
+      - tokenizers
+      - wandb
+      - tensorboard
+      - omegaconf
+      - trimesh
+      - open3d
+      - opencv-python
+      - nltk
+      - imageio

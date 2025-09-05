@@ -1,0 +1,49 @@
+# Core ML/RL dependencies
+torch>=2.0.0
+torchvision
+transformers>=4.21.0
+tokenizers
+
+# Reinforcement Learning
+gymnasium[mujoco]>=0.29.0
+stable-baselines3[extra]>=2.0.0
+sb3-contrib
+
+# MuJoCo and physics simulation
+mujoco>=2.3.0
+dm-control
+
+# Data processing and utilities
+numpy>=1.21.0
+scipy
+pandas
+scikit-learn
+matplotlib
+seaborn
+tqdm
+pyyaml
+omegaconf
+
+# Experiment tracking and logging
+wandb
+tensorboard
+
+# Motion and 3D processing (for MotionGPT integration)
+trimesh
+open3d
+opencv-python
+
+# Language processing (for MotionGPT)
+spacy
+nltk
+
+# Development tools
+pytest
+black
+flake8
+jupyter
+ipykernel
+
+# Optional: for advanced motion processing
+# smplx  # Uncomment if using SMPL body models
+
