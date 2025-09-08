@@ -1,0 +1,101 @@
+{
+  "instruction_difficulty": {
+    "walk forward": {
+      "mean_similarity": 0.2853880896451017,
+      "std_similarity": 0.013341460834297365,
+      "mean_reward": 115.21243951011536,
+      "difficulty_rank": 4
+    },
+    "walk backward": {
+      "mean_similarity": 0.2763964449765522,
+      "std_similarity": 0.011198183691989168,
+      "mean_reward": 122.06382538938082,
+      "difficulty_rank": 3
+    },
+    "turn left": {
+      "mean_similarity": 0.2726272928320902,
+      "std_similarity": 0.008146594365118779,
+      "mean_reward": 117.47250096969728,
+      "difficulty_rank": 2
+    },
+    "turn right": {
+      "mean_similarity": 0.2717730371583842,
+      "std_similarity": 0.008365397959385078,
+      "mean_reward": 120.8002716560587,
+      "difficulty_rank": 1
+    },
+    "stop moving": {
+      "mean_similarity": 0.2985243937339159,
+      "std_similarity": 0.012965799811324038,
+      "mean_reward": 121.13022134488692,
+      "difficulty_rank": 5
+    }
+  },
+  "model_generalization": {
+    "walk forward": {
+      "mean_similarity": 0.29606314263251965,
+      "std_similarity": 0.01287557800537943,
+      "mean_reward": 149.42388181502386,
+      "consistency": 0.9872880951175317
+    },
+    "walk backward": {
+      "mean_similarity": 0.27274522494656944,
+      "std_similarity": 0.009165185529750956,
+      "mean_reward": 106.11749619609823,
+      "consistency": 0.9909180522067457
+    },
+    "turn left": {
+      "mean_similarity": 0.26992898993066505,
+      "std_similarity": 0.010608082349451901,
+      "mean_reward": 102.83930039170448,
+      "consistency": 0.9895032678495997
+    },
+    "turn right": {
+      "mean_similarity": 0.28728432563785694,
+      "std_similarity": 0.01148551298588281,
+      "mean_reward": 123.27159860314441,
+      "consistency": 0.988644906092646
+    },
+    "stop moving": {
+      "mean_similarity": 0.2786875751984331,
+      "std_similarity": 0.012408375554326416,
+      "mean_reward": 115.0269818641681,
+      "consistency": 0.9877437051550146
+    }
+  },
+  "cross_task_transfer": {
+    "walk forward": {
+      "own_task_similarity": 0.3021606470121012,
+      "other_task_similarity": 0.29453876653762423,
+      "transfer_ratio": 0.9747754032504049
+    },
+    "walk backward": {
+      "own_task_similarity": 0.2778512384025055,
+      "other_task_similarity": 0.27146872158258545,
+      "transfer_ratio": 0.9770290143149404
+    },
+    "turn left": {
+      "own_task_similarity": 0.26559804462693054,
+      "other_task_similarity": 0.2710117262565987,
+      "transfer_ratio": 1.0203829875226393
+    },
+    "turn right": {
+      "own_task_similarity": 0.2756273889037811,
+      "other_task_similarity": 0.29019855982137593,
+      "transfer_ratio": 1.0528654680347516
+    },
+    "stop moving": {
+      "own_task_similarity": 0.2984872831665762,
+      "other_task_similarity": 0.27373764820639734,
+      "transfer_ratio": 0.9170831175867319
+    }
+  },
+  "best_performers": {
+    "highest_similarity": "walk forward",
+    "most_consistent": "walk backward",
+    "summary": {
+      "best_similarity_score": 0.29606314263251965,
+      "best_consistency_score": 0.9909180522067457
+    }
+  }
+}
