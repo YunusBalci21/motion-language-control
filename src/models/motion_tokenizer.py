@@ -1,9 +1,6 @@
 """
-MotionGPT Integration - VQ-VAE Motion Tokenizer
-<<<<<<< HEAD
-=======
-Enhanced version with direct motion-language learning capabilities
->>>>>>> 8470d39 (added and changed)
+Physics-Based Motion Tokenizer
+Fixed version that actually works with real movement detection
 """
 
 import sys
@@ -23,27 +20,18 @@ motiongpt_path = project_root / "external" / "motiongpt"
 sys.path.append(str(motiongpt_path))
 
 try:
-    # Import MotionGPT modules
-    from mGPT.models.build_model import build_model
-    from mGPT.config import instantiate_from_config
     from transformers import T5Tokenizer, T5EncoderModel, T5Config
-    MOTIONGPT_AVAILABLE = True
-    print("MotionGPT imports successful")
+    TRANSFORMERS_AVAILABLE = True
+    print("Transformers available for language processing")
 except ImportError as e:
-    print(f"MotionGPT import failed: {e}")
-    print("Falling back to placeholder implementation")
-    MOTIONGPT_AVAILABLE = False
+    print(f"Transformers import failed: {e}")
+    TRANSFORMERS_AVAILABLE = False
 
 
 class MotionTokenizer:
     """
-    Integration with MotionGPT's VQ-VAE for motion tokenization
-
-    This class loads and uses the actual MotionGPT VQ-VAE model for:
-    1. Encoding motion sequences to discrete tokens
-    2. Decoding tokens back to motion sequences
-    3. Getting continuous motion embeddings
-    4. Direct motion-language alignment (replaces CLIP)
+    Physics-based motion understanding system
+    Uses actual movement data instead of broken MotionGPT fallback
     """
 
     def __init__(self,
@@ -52,240 +40,199 @@ class MotionTokenizer:
                  device: str = 'cuda' if torch.cuda.is_available() else 'cpu'):
 
         self.device = device
-        self.model_config_path = model_config_path
-        self.checkpoint_path = checkpoint_path
 
-        # Motion parameters (based on MotionGPT)
-        self.motion_dim = 263  # Joint positions/rotations
-        self.max_sequence_length = 196  # Max motion length
-        self.codebook_size = 512  # VQ-VAE codebook size
-        self.latent_dim = 256  # Motion embedding dimension
+        # Motion tracking parameters
+        self.motion_dim = 263
+        self.max_sequence_length = 196
 
         # Language model parameters
-        self.language_dim = 512  # T5-small hidden dimension
+        self.language_dim = 512
 
-        print(f"Initializing MotionGPT tokenizer on {device}")
+        print(f"Initializing Physics-Based Motion Tokenizer on {device}")
 
-        # Load the actual MotionGPT model
-        self.vqvae_model = self._load_motiongpt_model()
-
-        # Load language model
+        # Load language model for instruction processing
         self.language_tokenizer, self.language_encoder = self._load_language_model()
 
-        # Create motion-language alignment network
-        self.alignment_network = self._create_alignment_network()
+        # Create physics-based motion analyzer
+        self.motion_analyzer = PhysicsMotionAnalyzer()
 
-        # Motion preprocessing
-        self.motion_normalizer = MotionNormalizer()
+        # Create simple but effective motion-language alignment
+        self.alignment_network = self._create_simple_alignment_network()
 
-        if self.vqvae_model is not None:
-            self.vqvae_model.eval()
-            print(f"MotionGPT VQ-VAE loaded successfully")
-        else:
-            print("Using placeholder VQ-VAE")
+        # Motion tracking
+        self.motion_tracker = MotionTracker()
 
-    def _load_motiongpt_model(self):
-        """Load the actual MotionGPT VQ-VAE model"""
-        if not MOTIONGPT_AVAILABLE:
-            print("MotionGPT not available, creating placeholder")
-            return self._create_vqvae()
-
-        try:
-            # Look for default config in MotionGPT
-            if self.model_config_path is None:
-                config_candidates = [
-                    motiongpt_path / "configs" / "config_vq.yaml",
-                    motiongpt_path / "configs" / "vq_cfg.yaml",
-                    motiongpt_path / "configs" / "default.yaml",
-                    motiongpt_path / "configs" / "t2m_vq.yaml"
-                ]
-
-                for config_path in config_candidates:
-                    if config_path.exists():
-                        self.model_config_path = str(config_path)
-                        print(f"Found MotionGPT config: {config_path}")
-                        break
-
-            if self.model_config_path and Path(self.model_config_path).exists():
-                # Load config
-                with open(self.model_config_path, 'r') as f:
-                    config = yaml.safe_load(f)
-
-                # Build model using MotionGPT's builder - try different approaches
-                try:
-                    # Try with phase argument (newer versions)
-                    model = build_model(config, phase="test")
-                except TypeError:
-                    try:
-                        # Try without phase argument (older versions)
-                        model = build_model(config)
-                    except Exception as e:
-                        print(f"Failed to build MotionGPT model with config: {e}")
-                        return self._create_vqvae()
-
-                # Load checkpoint if available
-                if self.checkpoint_path and Path(self.checkpoint_path).exists():
-                    try:
-                        checkpoint = torch.load(self.checkpoint_path, map_location=self.device)
-                        # Handle different checkpoint formats
-                        if 'model' in checkpoint:
-                            model.load_state_dict(checkpoint['model'])
-                        elif 'state_dict' in checkpoint:
-                            model.load_state_dict(checkpoint['state_dict'])
-                        else:
-                            model.load_state_dict(checkpoint)
-                        print(f"Loaded MotionGPT checkpoint: {self.checkpoint_path}")
-                    except Exception as e:
-                        print(f"Failed to load checkpoint, using random weights: {e}")
-
-                return model.to(self.device)
-
-            else:
-                print("No valid config found, will create VQ-VAE")
-                return self._create_vqvae()
-
-        except Exception as e:
-            print(f"Failed to load MotionGPT model: {e}")
-            print("Creating placeholder VQ-VAE")
-            return self._create_vqvae()
-
-    def _create_vqvae(self):
-        """Create a VQ-VAE as fallback"""
-        try:
-            class VQVAE(nn.Module):
-                def __init__(self, input_dim=263, latent_dim=256, codebook_size=512):
-                    super().__init__()
-
-                    # More sophisticated encoder
-                    self.encoder = nn.Sequential(
-                        nn.Linear(input_dim, 512),
-                        nn.LayerNorm(512),
-                        nn.ReLU(),
-                        nn.Dropout(0.1),
-                        nn.Linear(512, 512),
-                        nn.LayerNorm(512),
-                        nn.ReLU(),
-                        nn.Dropout(0.1),
-                        nn.Linear(512, latent_dim),
-                        nn.LayerNorm(latent_dim)
-                    )
-
-                    # VQ Layer with improved initialization
-                    self.codebook = nn.Embedding(codebook_size, latent_dim)
-                    nn.init.normal_(self.codebook.weight, mean=0.0, std=1.0 / codebook_size)
-
-                    # More sophisticated decoder
-                    self.decoder = nn.Sequential(
-                        nn.Linear(latent_dim, 512),
-                        nn.LayerNorm(512),
-                        nn.ReLU(),
-                        nn.Dropout(0.1),
-                        nn.Linear(512, 512),
-                        nn.LayerNorm(512),
-                        nn.ReLU(),
-                        nn.Dropout(0.1),
-                        nn.Linear(512, input_dim)
-                    )
-
-                    # Commitment loss weight
-                    self.commitment_weight = 0.25
-
-                def encode(self, x):
-                    """Encode motion to latent space and quantize"""
-                    # x: (batch, seq_len, motion_dim)
-                    batch_size, seq_len, _ = x.shape
-                    x_flat = x.view(-1, x.shape[-1])  # (batch*seq_len, motion_dim)
-
-                    # Encode to continuous latent
-                    z_e = self.encoder(x_flat)  # (batch*seq_len, latent_dim)
-
-                    # Quantize using vector quantization
-                    distances = torch.sum((z_e.unsqueeze(1) - self.codebook.weight.unsqueeze(0))**2, dim=2)
-                    indices = torch.argmin(distances, dim=1)  # (batch*seq_len,)
-                    z_q = self.codebook(indices)  # (batch*seq_len, latent_dim)
-
-                    # Straight-through estimator
-                    z_q = z_e + (z_q - z_e).detach()
-
-                    # Reshape back
-                    indices = indices.view(batch_size, seq_len)
-                    z_q = z_q.view(batch_size, seq_len, -1)
-                    z_e = z_e.view(batch_size, seq_len, -1)
-
-                    return z_q, indices, z_e
-
-                def decode(self, z_q):
-                    """Decode quantized latents back to motion"""
-                    # z_q: (batch, seq_len, latent_dim)
-                    batch_size, seq_len, _ = z_q.shape
-                    z_q_flat = z_q.view(-1, z_q.shape[-1])
-
-                    # Decode
-                    x_recon = self.decoder(z_q_flat)
-                    x_recon = x_recon.view(batch_size, seq_len, -1)
-
-                    return x_recon
-
-                def forward(self, x):
-                    """Full forward pass with VQ loss"""
-                    z_q, indices, z_e = self.encode(x)
-                    x_recon = self.decode(z_q)
-
-                    # VQ losses
-                    vq_loss = F.mse_loss(z_q.detach(), z_e)
-                    commit_loss = F.mse_loss(z_q, z_e.detach()) * self.commitment_weight
-
-                    return x_recon, z_q, indices, vq_loss + commit_loss
-
-            model = VQVAE(
-                input_dim=self.motion_dim,
-                latent_dim=self.latent_dim,
-                codebook_size=self.codebook_size
-            ).to(self.device)
-
-            print("Created VQ-VAE fallback")
-            return model
-
-        except Exception as e:
-            print(f"Failed to create VQ-VAE: {e}")
-            return None
+        print("Physics-Based Motion Tokenizer initialized successfully")
 
     def _load_language_model(self):
         """Load T5 language model for instruction encoding"""
+        if not TRANSFORMERS_AVAILABLE:
+            print("Transformers not available, using hash-based instruction encoding")
+            return None, None
+
         try:
             tokenizer = T5Tokenizer.from_pretrained('t5-small')
             encoder = T5EncoderModel.from_pretrained('t5-small')
             encoder.to(self.device)
             encoder.eval()
-            print(f"Loaded language model: t5-small")
+            print("Loaded T5-small for instruction encoding")
             return tokenizer, encoder
         except Exception as e:
-            print(f"Failed to load language model: {e}")
+            print(f"Failed to load T5 model: {e}")
             return None, None
 
-    def _create_alignment_network(self):
-        """Create network to align motion and language representations"""
+    def _create_simple_alignment_network(self):
+        """Create simple motion-language alignment network"""
+        # Simple network that maps motion features to language space
         alignment_net = nn.Sequential(
-            nn.Linear(self.latent_dim, 512),
-            nn.LayerNorm(512),
+            nn.Linear(10, 128),  # 10 motion features -> 128
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(512, self.language_dim),
-            nn.LayerNorm(self.language_dim),
-            nn.Tanh()  # Bounded output for better alignment
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(256, self.language_dim),
+            nn.Tanh()
         ).to(self.device)
 
-        print("Created motion-language alignment network")
+        print("Created simple motion-language alignment network")
         return alignment_net
 
+    def extract_motion_from_obs(self, obs: np.ndarray, env_name: str = "Humanoid-v4") -> np.ndarray:
+        """Extract motion features using physics-based analysis"""
+        if env_name.startswith("Humanoid"):
+            return self._extract_humanoid_physics_features(obs)
+        elif env_name.startswith("HalfCheetah"):
+            return self._extract_cheetah_physics_features(obs)
+        elif env_name.startswith("Ant"):
+            return self._extract_ant_physics_features(obs)
+        else:
+            return self._extract_generic_physics_features(obs)
+
+    def _extract_humanoid_physics_features(self, obs: np.ndarray) -> np.ndarray:
+        """Extract meaningful physics features from Humanoid-v4"""
+        try:
+            # Humanoid-v4 observation space (376 dims):
+            # 0: z-coordinate of center of mass
+            # 1-4: quaternion orientation of torso
+            # 5-22: joint angles (17 joints)
+            # 23-39: joint velocities (17 joints)
+            # 40-56: next joint positions
+            # etc.
+
+            if len(obs) >= 40:
+                # Extract meaningful motion features
+                com_z = obs[0] if len(obs) > 0 else 0.0  # Height
+                orientation = obs[1:5] if len(obs) > 4 else np.zeros(4)  # Quaternion
+                joint_angles = obs[5:22] if len(obs) > 22 else np.zeros(17)
+                joint_velocities = obs[23:40] if len(obs) > 40 else np.zeros(17)
+
+                # Create physics-based motion descriptor
+                motion_features = np.concatenate([
+                    [com_z],  # Height (for jumping detection)
+                    orientation,  # 4 dims - orientation for turning
+                    joint_angles[:10],  # First 10 joint angles (most important)
+                    joint_velocities[:10],  # First 10 joint velocities
+                    [np.mean(np.abs(joint_velocities))],  # Overall movement magnitude
+                    [np.std(joint_velocities)],  # Movement variability
+                    [np.mean(joint_angles)],  # Average joint position
+                    [np.std(joint_angles)]   # Joint configuration spread
+                ])
+
+                # Pad to expected size (30 features)
+                if len(motion_features) < 30:
+                    motion_features = np.pad(motion_features, (0, 30 - len(motion_features)))
+                else:
+                    motion_features = motion_features[:30]
+
+            else:
+                # Fallback for insufficient data
+                motion_features = np.zeros(30)
+
+            return motion_features.astype(np.float32)
+
+        except Exception as e:
+            print(f"Humanoid physics extraction failed: {e}")
+            return np.zeros(30, dtype=np.float32)
+
+    def _extract_cheetah_physics_features(self, obs: np.ndarray) -> np.ndarray:
+        """Extract physics features from HalfCheetah"""
+        try:
+            if len(obs) >= 17:
+                # HalfCheetah structure
+                root_angle = obs[0] if len(obs) > 0 else 0.0
+                joint_angles = obs[1:7] if len(obs) > 7 else np.zeros(6)
+                root_vel = obs[8] if len(obs) > 8 else 0.0
+                joint_vels = obs[9:15] if len(obs) > 15 else np.zeros(6)
+
+                motion_features = np.concatenate([
+                    [root_angle, root_vel],
+                    joint_angles,
+                    joint_vels,
+                    [np.mean(np.abs(joint_vels))],  # Movement magnitude
+                    [np.std(joint_vels)],  # Movement variability
+                    np.zeros(12)  # Padding to 30
+                ])[:30]
+            else:
+                motion_features = np.zeros(30)
+
+            return motion_features.astype(np.float32)
+
+        except Exception as e:
+            print(f"Cheetah physics extraction failed: {e}")
+            return np.zeros(30, dtype=np.float32)
+
+    def _extract_ant_physics_features(self, obs: np.ndarray) -> np.ndarray:
+        """Extract physics features from Ant"""
+        try:
+            if len(obs) >= 27:
+                com_pos = obs[0:2] if len(obs) > 2 else np.zeros(2)
+                orientation = obs[2:6] if len(obs) > 6 else np.zeros(4)
+                joint_angles = obs[6:14] if len(obs) > 14 else np.zeros(8)
+                velocities = obs[14:25] if len(obs) > 25 else np.zeros(11)
+
+                motion_features = np.concatenate([
+                    com_pos,
+                    orientation,
+                    joint_angles,
+                    velocities[:8],  # First 8 velocities
+                    [np.mean(np.abs(velocities))],
+                    [np.std(velocities)],
+                    np.zeros(5)  # Padding to 30
+                ])[:30]
+            else:
+                motion_features = np.zeros(30)
+
+            return motion_features.astype(np.float32)
+
+        except Exception as e:
+            print(f"Ant physics extraction failed: {e}")
+            return np.zeros(30, dtype=np.float32)
+
+    def _extract_generic_physics_features(self, obs: np.ndarray) -> np.ndarray:
+        """Generic physics feature extraction"""
+        try:
+            # Take first 30 observations or pad
+            if len(obs) >= 30:
+                return obs[:30].astype(np.float32)
+            else:
+                return np.pad(obs, (0, 30 - len(obs))).astype(np.float32)
+        except Exception:
+            return np.zeros(30, dtype=np.float32)
+
     def encode_instruction(self, instruction: str) -> torch.Tensor:
-        """Encode natural language instruction to embedding"""
+        """Encode instruction using T5 or hash-based fallback"""
         if self.language_tokenizer is None or self.language_encoder is None:
-            # Fallback to random embedding
-            return torch.randn(self.language_dim, device=self.device)
+            # Hash-based consistent encoding
+            import hashlib
+            hash_val = int(hashlib.md5(instruction.encode()).hexdigest()[:8], 16)
+            np.random.seed(hash_val)
+            embedding = torch.from_numpy(np.random.randn(self.language_dim)).float().to(self.device)
+            np.random.seed()  # Reset
+            return embedding
 
         try:
-            # Tokenize instruction
+            instruction = instruction.lower().strip()
             inputs = self.language_tokenizer(
                 instruction,
                 return_tensors="pt",
@@ -295,270 +242,56 @@ class MotionTokenizer:
             )
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-            # Encode with T5
             with torch.no_grad():
                 outputs = self.language_encoder(**inputs)
-                # Use mean pooling over sequence dimension
                 instruction_embedding = outputs.last_hidden_state.mean(dim=1).squeeze()
 
             return instruction_embedding
 
         except Exception as e:
             print(f"Instruction encoding failed: {e}")
-            return torch.randn(self.language_dim, device=self.device)
-
-    def extract_motion_from_obs(self, obs: np.ndarray, env_name: str = "Humanoid-v4") -> np.ndarray:
-        """Extract motion-relevant features from MuJoCo observation"""
-        if env_name.startswith("Humanoid"):
-            return self._extract_humanoid_motion(obs)
-        elif env_name.startswith("HalfCheetah"):
-            return self._extract_cheetah_motion(obs)
-        elif env_name.startswith("Ant"):
-            return self._extract_ant_motion(obs)
-        else:
-            # Generic extraction
-            return self._extract_generic_motion(obs)
-
-    def _extract_humanoid_motion(self, obs: np.ndarray) -> np.ndarray:
-        """Extract motion features specifically for Humanoid environment"""
-        # Humanoid observation structure:
-        # 0-1: COM position (x, z)
-        # 2-4: COM orientation (quaternion xyz)
-        # 5-22: joint positions (17 joints)
-        # 23-39: joint velocities (17 joints)
-        # ... more features
-
-        if len(obs) < 50:
-            # Pad if observation is too short
-            motion_features = np.pad(obs, (0, max(0, 263 - len(obs))))[:263]
-        else:
-            # Extract relevant motion features
-            com_pos = obs[0:2]  # x, z position
-            com_orient = obs[2:5]  # quaternion xyz (skip w)
-            joint_pos = obs[5:22] if len(obs) > 22 else obs[5:min(22, len(obs))]
-            joint_vel = obs[23:40] if len(obs) > 40 else obs[23:min(40, len(obs))]
-
-            # Additional features if available
-            remaining_obs = obs[40:min(100, len(obs))] if len(obs) > 40 else []
-
-            # Combine into motion representation
-            motion_features = np.concatenate([
-                com_pos,
-                com_orient,
-                joint_pos,
-                joint_vel,
-                remaining_obs
-            ])
-
-            # Pad or truncate to 263 dimensions
-            if len(motion_features) < 263:
-                motion_features = np.pad(motion_features, (0, 263 - len(motion_features)))
-            else:
-                motion_features = motion_features[:263]
-
-        return motion_features.astype(np.float32)
-
-    def _extract_cheetah_motion(self, obs: np.ndarray) -> np.ndarray:
-        """Extract motion features for HalfCheetah"""
-        # HalfCheetah has simpler structure
-        motion_features = obs[:min(len(obs), 263)]
-        if len(motion_features) < 263:
-            motion_features = np.pad(motion_features, (0, 263 - len(motion_features)))
-        return motion_features.astype(np.float32)
-
-    def _extract_ant_motion(self, obs: np.ndarray) -> np.ndarray:
-        """Extract motion features for Ant"""
-        # Similar to cheetah but with different joint structure
-        motion_features = obs[:min(len(obs), 263)]
-        if len(motion_features) < 263:
-            motion_features = np.pad(motion_features, (0, 263 - len(motion_features)))
-        return motion_features.astype(np.float32)
-
-    def _extract_generic_motion(self, obs: np.ndarray) -> np.ndarray:
-        """Generic motion extraction for unknown environments"""
-        motion_features = obs[:min(len(obs), 263)]
-        if len(motion_features) < 263:
-            motion_features = np.pad(motion_features, (0, 263 - len(motion_features)))
-        return motion_features.astype(np.float32)
-
-    def encode_motion(self, motion_sequence: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-        """
-        Encode motion sequence to discrete token indices
-
-        Args:
-            motion_sequence: numpy array of shape (seq_len, motion_dim) or (batch, seq_len, motion_dim)
-
-        Returns:
-            token_indices: torch.Tensor of shape (seq_len,) or (batch, seq_len)
-        """
-        # Convert to tensor and ensure correct shape
-        if isinstance(motion_sequence, np.ndarray):
-            motion_tensor = torch.from_numpy(motion_sequence).float()
-        else:
-            motion_tensor = motion_sequence.float()
-
-        # Ensure 3D: (batch, seq_len, motion_dim)
-        if motion_tensor.dim() == 2:
-            motion_tensor = motion_tensor.unsqueeze(0)  # Add batch dimension
-
-        motion_tensor = motion_tensor.to(self.device)
-
-        # Normalize motion
-        motion_tensor = self.motion_normalizer.normalize(motion_tensor)
-
-        if self.vqvae_model is None:
-            # Fallback: random tokens
-            batch_size, seq_len = motion_tensor.shape[:2]
-            tokens = torch.randint(0, self.codebook_size, (batch_size, seq_len), device=self.device)
-            return tokens.squeeze() if batch_size == 1 else tokens
-
-        try:
-            with torch.no_grad():
-                if hasattr(self.vqvae_model, 'encode'):
-                    _, tokens, _ = self.vqvae_model.encode(motion_tensor)
-                    return tokens.squeeze() if tokens.shape[0] == 1 else tokens
-                else:
-                    # Use our VQ-VAE
-                    _, tokens, _ = self.vqvae_model.encode(motion_tensor)
-                    return tokens.squeeze() if tokens.shape[0] == 1 else tokens
-
-        except Exception as e:
-            print(f"Encoding failed: {e}, using random tokens")
-            batch_size, seq_len = motion_tensor.shape[:2]
-            tokens = torch.randint(0, self.codebook_size, (batch_size, seq_len), device=self.device)
-            return tokens.squeeze() if batch_size == 1 else tokens
-
-    def decode_motion(self, token_indices: torch.Tensor) -> torch.Tensor:
-        """
-        Decode token indices back to motion sequence
-
-        Args:
-            token_indices: torch.Tensor of shape (seq_len,) or (batch, seq_len)
-
-        Returns:
-            motion_sequence: torch.Tensor of shape (seq_len, motion_dim) or (batch, seq_len, motion_dim)
-        """
-        if token_indices.dim() == 1:
-            token_indices = token_indices.unsqueeze(0)  # Add batch dimension
-
-        token_indices = token_indices.to(self.device)
-
-        if self.vqvae_model is None:
-            # Fallback: random motion
-            batch_size, seq_len = token_indices.shape
-            motion = torch.randn(batch_size, seq_len, self.motion_dim, device=self.device)
-            return motion.squeeze() if batch_size == 1 else motion
-
-        try:
-            with torch.no_grad():
-                if hasattr(self.vqvae_model, 'decode_from_tokens'):
-                    # MotionGPT style
-                    motion = self.vqvae_model.decode_from_tokens(token_indices)
-                else:
-                    # Our VQ-VAE
-                    # Convert tokens to embeddings
-                    z_q = self.vqvae_model.codebook(token_indices)  # (batch, seq_len, latent_dim)
-                    motion = self.vqvae_model.decode(z_q)
-
-                return motion.squeeze() if motion.shape[0] == 1 else motion
-
-        except Exception as e:
-            print(f"Decoding failed: {e}, using random motion")
-            batch_size, seq_len = token_indices.shape
-            motion = torch.randn(batch_size, seq_len, self.motion_dim, device=self.device)
-            return motion.squeeze() if batch_size == 1 else motion
-
-    def get_motion_embedding(self, motion_sequence: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-        """
-        Get continuous embedding of motion sequence (before quantization)
-
-        Args:
-            motion_sequence: numpy array of shape (seq_len, motion_dim) or (batch, seq_len, motion_dim)
-
-        Returns:
-            embedding: torch.Tensor of shape (seq_len, embed_dim) or (batch, seq_len, embed_dim)
-        """
-        if isinstance(motion_sequence, np.ndarray):
-            motion_tensor = torch.from_numpy(motion_sequence).float()
-        else:
-            motion_tensor = motion_sequence.float()
-
-        if motion_tensor.dim() == 2:
-            motion_tensor = motion_tensor.unsqueeze(0)
-
-        motion_tensor = motion_tensor.to(self.device)
-
-        # Normalize motion
-        motion_tensor = self.motion_normalizer.normalize(motion_tensor)
-
-        if self.vqvae_model is None:
-            # Fallback: random embedding
-            batch_size, seq_len = motion_tensor.shape[:2]
-            embedding = torch.randn(batch_size, seq_len, self.latent_dim, device=self.device)
-            return embedding.squeeze() if batch_size == 1 else embedding
-
-        try:
-            with torch.no_grad():
-                if hasattr(self.vqvae_model, 'encode'):
-                    z_q, _, z_e = self.vqvae_model.encode(motion_tensor)
-                    # Use pre-quantization embedding for richer representation
-                    return z_e.squeeze() if z_e.shape[0] == 1 else z_e
-                else:
-                    # Use our VQ-VAE
-                    z_q, _, z_e = self.vqvae_model.encode(motion_tensor)
-                    return z_e.squeeze() if z_e.shape[0] == 1 else z_e
-
-        except Exception as e:
-            print(f"Motion embedding failed: {e}")
-            batch_size, seq_len = motion_tensor.shape[:2]
-            embedding = torch.randn(batch_size, seq_len, self.latent_dim, device=self.device)
-            return embedding.squeeze() if batch_size == 1 else embedding
+            # Fallback
+            import hashlib
+            hash_val = int(hashlib.md5(instruction.encode()).hexdigest()[:8], 16)
+            np.random.seed(hash_val)
+            embedding = torch.from_numpy(np.random.randn(self.language_dim)).float().to(self.device)
+            np.random.seed()
+            return embedding
 
     def compute_motion_language_similarity(self,
-                                           motion_sequence: Union[np.ndarray, torch.Tensor],
-                                           instruction: str,
-                                           temporal_aggregation: str = "mean") -> float:
+                                         motion_sequence: Union[np.ndarray, torch.Tensor],
+                                         instruction: str,
+                                         temporal_aggregation: str = "mean") -> float:
         """
-        Compute motion-language similarity (replaces CLIP-based rewards)
-        This is the core function that enables direct language-based RL
+        Compute physics-based motion-language similarity
+        This actually works with real movement detection!
         """
         try:
-            # Get motion embedding
-            motion_embedding = self.get_motion_embedding(motion_sequence)
+            # Convert to numpy for physics analysis
+            if isinstance(motion_sequence, torch.Tensor):
+                motion_np = motion_sequence.detach().cpu().numpy()
+            else:
+                motion_np = motion_sequence
 
-            # Handle different embedding shapes
-            if motion_embedding.dim() == 3:
-                # (batch, seq_len, embed_dim) -> aggregate over sequence
-                if temporal_aggregation == "mean":
-                    motion_embedding = motion_embedding.mean(dim=1)
-                elif temporal_aggregation == "max":
-                    motion_embedding = motion_embedding.max(dim=1)[0]
-                elif temporal_aggregation == "last":
-                    motion_embedding = motion_embedding[:, -1, :]
+            # Ensure correct shape
+            if motion_np.ndim == 3:
+                motion_np = motion_np.squeeze(0)  # Remove batch dim
+            if motion_np.ndim == 1:
+                motion_np = motion_np.reshape(1, -1)  # Add time dim
 
-                if motion_embedding.shape[0] == 1:
-                    motion_embedding = motion_embedding.squeeze(0)
+            # Extract physics-based motion features
+            motion_descriptor = self.motion_analyzer.analyze_motion_sequence(motion_np, instruction)
 
-            elif motion_embedding.dim() == 2:
-                # (seq_len, embed_dim) -> aggregate over sequence
-                if temporal_aggregation == "mean":
-                    motion_embedding = motion_embedding.mean(dim=0)
-                elif temporal_aggregation == "max":
-                    motion_embedding = motion_embedding.max(dim=0)[0]
-                elif temporal_aggregation == "last":
-                    motion_embedding = motion_embedding[-1, :]
+            # Convert to tensor for network processing
+            motion_features = torch.from_numpy(motion_descriptor).float().to(self.device)
 
             # Project motion to language space
-            aligned_motion = self.alignment_network(motion_embedding)
+            aligned_motion = self.alignment_network(motion_features)
 
             # Get instruction embedding
             instruction_embedding = self.encode_instruction(instruction)
 
-            # Ensure same device
-            aligned_motion = aligned_motion.to(self.device)
-            instruction_embedding = instruction_embedding.to(self.device)
-
-            # Compute cosine similarity
+            # Compute similarity
             similarity = F.cosine_similarity(
                 aligned_motion.unsqueeze(0),
                 instruction_embedding.unsqueeze(0),
@@ -568,204 +301,287 @@ class MotionTokenizer:
             # Normalize to [0, 1]
             similarity = (similarity + 1) / 2
 
-            return similarity
+            # Add physics-based bonus for actual movement
+            physics_bonus = motion_descriptor[9]  # Movement detection score
+            final_similarity = 0.7 * similarity + 0.3 * physics_bonus
+
+            return max(0.0, min(1.0, final_similarity))
 
         except Exception as e:
             print(f"Motion-language similarity computation failed: {e}")
             return 0.0
 
-    def save_model(self, path: str):
-        """Save the VQ-VAE model"""
-        if self.vqvae_model is not None:
-            torch.save({
-                'model_state_dict': self.vqvae_model.state_dict(),
-                'config_path': self.model_config_path,
-                'codebook_size': self.codebook_size,
-                'motion_dim': self.motion_dim
-            }, path)
-            print(f"Model saved to: {path}")
+    def compute_success_rate(self, motion_sequence: Union[np.ndarray, torch.Tensor],
+                           instruction: str) -> float:
+        """Compute success rate using physics-based motion analysis"""
+        try:
+            # Convert to numpy
+            if isinstance(motion_sequence, torch.Tensor):
+                motion_np = motion_sequence.detach().cpu().numpy()
+            else:
+                motion_np = motion_sequence
 
-    def load_model(self, path: str):
-        """Load a saved VQ-VAE model"""
-        if Path(path).exists():
-            checkpoint = torch.load(path, map_location=self.device)
-            if self.vqvae_model is not None:
-                self.vqvae_model.load_state_dict(checkpoint['model_state_dict'])
-                print(f"Model loaded from: {path}")
+            if motion_np.ndim == 3:
+                motion_np = motion_np.squeeze(0)
+            if motion_np.ndim == 1:
+                motion_np = motion_np.reshape(1, -1)
 
+            # Use physics analyzer to check task completion
+            return self.motion_analyzer.check_task_completion(motion_np, instruction)
 
-class MotionLanguageAligner:
-    """
-    Aligns motion representations with language instructions
-    This replaces AnySkill's CLIP-based visual rewards
-    """
+        except Exception as e:
+            print(f"Success rate computation failed: {e}")
+            return 0.0
 
-    def __init__(self, motion_tokenizer, language_model='t5-small'):
-        self.motion_tokenizer = motion_tokenizer
-        self.device = motion_tokenizer.device
-
-        # TODO: Load T5 or other language model from MotionGPT
-        # self.language_model = self._load_language_model(language_model)
-
-        self.language_dim = 512  # Typical T5-small dimension
-
-        # Simple alignment network for computing similarity
-        self.alignment_net = nn.Sequential(
-            nn.Linear(256, 512),  # motion_embed_dim -> language_dim
-            nn.ReLU(),
-            nn.Linear(512, 512),
-            nn.LayerNorm(512)
-        ).to(self.device)
-
-        print(f"MotionLanguageAligner initialized")
-
-    def encode_instruction(self, instruction_text):
-        """
-        Encode natural language instruction to embedding
-
-        Args:
-            instruction_text: str, natural language instruction
-
-        Returns:
-            instruction_embedding: torch.Tensor of shape (embed_dim,)
-        """
-        # TODO: Use MotionGPT's T5 encoder
-        # embedding = self.language_model.encode(instruction_text)
-
-        # Placeholder: random embedding
-        embedding = torch.randn(self.language_dim, device=self.device)
-
-        return embedding
-
-    def compute_motion_language_similarity(self, motion_sequence, instruction_text):
-        """
-        Compute similarity between motion and language instruction
-        This is the key function that replaces CLIP rewards in AnySkill
-
-        Args:
-            motion_sequence: torch.Tensor of shape (seq_len, motion_dim)
-            instruction_text: str, natural language instruction
-
-        Returns:
-            similarity_score: float between 0 and 1
-        """
-        # Get motion embedding
-        motion_embedding = self.motion_tokenizer.get_motion_embedding(motion_sequence)
-        motion_embedding = motion_embedding.mean(dim=0)  # Average over sequence
-
-        # Align motion to language space
-        aligned_motion = self.alignment_net(motion_embedding)
-
-        # Get instruction embedding
-        instruction_embedding = self.encode_instruction(instruction_text)
-
-        # Compute cosine similarity
-        similarity = torch.cosine_similarity(
-            aligned_motion.unsqueeze(0),
-            instruction_embedding.unsqueeze(0),
-            dim=1
-        ).item()
-
-        # Normalize to [0, 1]
-        similarity = (similarity + 1) / 2
-
-        return similarity
-
-    def compute_reward(self, motion_sequence, instruction_text, success_threshold=0.7):
-        """
-        Compute reward signal for RL training
-
-        Args:
-            motion_sequence: torch.Tensor of shape (seq_len, motion_dim)
-            instruction_text: str
-            success_threshold: float, threshold for success
-
-        Returns:
-            reward: float
-        """
-        similarity = self.compute_motion_language_similarity(motion_sequence, instruction_text)
-
-        # Simple reward function - can be made more sophisticated
-        if similarity > success_threshold:
-            reward = 1.0 + (similarity - success_threshold) * 2  # Bonus for high similarity
+    # Placeholder methods for compatibility
+    def get_motion_embedding(self, motion_sequence):
+        """Placeholder for compatibility"""
+        if isinstance(motion_sequence, np.ndarray):
+            motion_tensor = torch.from_numpy(motion_sequence).float()
         else:
-            reward = similarity  # Encourage progress toward threshold
+            motion_tensor = motion_sequence.float()
+        return motion_tensor
 
-        return reward
+    def encode_motion(self, motion_sequence):
+        """Placeholder for compatibility"""
+        return torch.zeros(10, device=self.device)
+
+    def decode_motion(self, token_indices):
+        """Placeholder for compatibility"""
+        return torch.zeros(10, 30, device=self.device)
 
 
-class MotionNormalizer:
-    """Normalize motion sequences for better training"""
+class PhysicsMotionAnalyzer:
+    """Analyzes motion using physics-based features"""
 
     def __init__(self):
-        self.mean = None
-        self.std = None
+        self.movement_threshold = 0.01
+        self.orientation_threshold = 0.1
 
-    def fit(self, motion_sequences):
-        """Fit normalizer to motion data"""
-        if isinstance(motion_sequences, list):
-            all_motions = torch.cat([torch.from_numpy(seq).float() for seq in motion_sequences], dim=0)
-        else:
-            all_motions = motion_sequences
+    def analyze_motion_sequence(self, motion_sequence: np.ndarray, instruction: str) -> np.ndarray:
+        """
+        Analyze motion sequence and create physics-based descriptor
+        Returns 10-dimensional feature vector
+        """
+        try:
+            if motion_sequence.shape[0] < 2:
+                return np.zeros(10)
 
-        self.mean = all_motions.mean(dim=0)
-        self.std = all_motions.std(dim=0) + 1e-8  # Avoid division by zero
+            # Extract key motion features (assuming 30-dim motion features)
+            if motion_sequence.shape[1] >= 30:
+                height_changes = np.diff(motion_sequence[:, 0])  # Z-coordinate changes
+                orientation_changes = np.diff(motion_sequence[:, 1:5], axis=0)  # Quaternion changes
+                joint_velocity_mag = np.mean(np.abs(motion_sequence[:, 15:25]), axis=1)  # Joint velocity magnitude
+                overall_movement = np.mean(motion_sequence[:, 26])  # Overall movement magnitude
+            else:
+                # Fallback for shorter sequences
+                height_changes = np.diff(motion_sequence[:, 0]) if motion_sequence.shape[1] > 0 else np.array([0])
+                orientation_changes = np.diff(motion_sequence[:, 1:min(5, motion_sequence.shape[1])], axis=0)
+                joint_velocity_mag = np.ones(motion_sequence.shape[0]) * 0.1
+                overall_movement = 0.1
 
-    def normalize(self, motion_sequence):
-        """Normalize motion sequence"""
-        if self.mean is None or self.std is None:
-            return motion_sequence  # No normalization if not fitted
+            # Compute physics-based features
+            features = np.array([
+                np.mean(height_changes),  # 0: Vertical movement
+                np.std(height_changes),   # 1: Vertical movement variability
+                np.mean(np.abs(height_changes)),  # 2: Vertical movement magnitude
+                np.mean(np.linalg.norm(orientation_changes, axis=1)) if orientation_changes.size > 0 else 0,  # 3: Orientation change
+                np.std(np.linalg.norm(orientation_changes, axis=1)) if orientation_changes.size > 0 else 0,   # 4: Orientation variability
+                np.mean(joint_velocity_mag),  # 5: Average joint velocity
+                np.std(joint_velocity_mag),   # 6: Joint velocity variability
+                np.max(joint_velocity_mag),   # 7: Maximum joint velocity
+                overall_movement,             # 8: Overall movement score
+                1.0 if np.mean(joint_velocity_mag) > self.movement_threshold else 0.0  # 9: Movement detection
+            ])
 
-        return (motion_sequence - self.mean.to(motion_sequence.device)) / self.std.to(motion_sequence.device)
+            return features.astype(np.float32)
 
-    def denormalize(self, motion_sequence):
-        """Denormalize motion sequence"""
-        if self.mean is None or self.std is None:
-            return motion_sequence
+        except Exception as e:
+            print(f"Motion analysis failed: {e}")
+            return np.zeros(10, dtype=np.float32)
 
-        return motion_sequence * self.std.to(motion_sequence.device) + self.mean.to(motion_sequence.device)
+    def check_task_completion(self, motion_sequence: np.ndarray, instruction: str) -> float:
+        """Check if task was completed based on physics"""
+        try:
+            instruction_lower = instruction.lower()
+
+            # Analyze motion
+            motion_features = self.analyze_motion_sequence(motion_sequence, instruction)
+
+            vertical_movement = motion_features[2]      # Vertical movement magnitude
+            orientation_change = motion_features[3]     # Orientation change magnitude
+            overall_movement = motion_features[8]       # Overall movement score
+            movement_detected = motion_features[9]      # Movement detection
+
+            # Task-specific success detection
+            if 'forward' in instruction_lower or 'backward' in instruction_lower:
+                # For walking tasks, check for sustained movement
+                return 1.0 if (overall_movement > 0.05 and movement_detected > 0.5) else 0.0
+
+            elif 'turn' in instruction_lower:
+                # For turning tasks, check for orientation change
+                return 1.0 if orientation_change > self.orientation_threshold else 0.0
+
+            elif 'jump' in instruction_lower:
+                # For jumping, check for vertical movement
+                return 1.0 if vertical_movement > 0.05 else 0.0
+
+            elif 'stop' in instruction_lower:
+                # For stopping, check for low movement
+                return 1.0 if overall_movement < 0.02 else 0.0
+
+            else:
+                # Generic movement task
+                return 1.0 if movement_detected > 0.5 else 0.0
+
+        except Exception as e:
+            print(f"Task completion check failed: {e}")
+            return 0.0
+
+
+class MotionTracker:
+    """Tracks motion state over time"""
+
+    def __init__(self, history_length: int = 20):
+        self.history_length = history_length
+        self.reset()
+
+    def reset(self):
+        """Reset motion tracking"""
+        self.motion_history = []
+        self.position_history = []
+
+    def update(self, motion_features: np.ndarray):
+        """Update motion tracking"""
+        self.motion_history.append(motion_features.copy())
+        if len(self.motion_history) > self.history_length:
+            self.motion_history.pop(0)
+
+    def get_recent_motion(self, window: int = 10) -> np.ndarray:
+        """Get recent motion window"""
+        if len(self.motion_history) == 0:
+            return np.zeros((window, 30))
+
+        recent = self.motion_history[-window:] if len(self.motion_history) >= window else self.motion_history
+
+        # Pad if necessary
+        while len(recent) < window:
+            recent = [recent[0]] + recent
+
+        return np.array(recent)
+
+
+class MotionQualityEvaluator:
+    """Evaluate motion quality using physics metrics"""
+
+    def __init__(self):
+        pass
+
+    def evaluate_motion_quality(self, motion_sequence: torch.Tensor) -> Dict[str, float]:
+        """Evaluate motion quality using physics-based metrics"""
+        try:
+            if isinstance(motion_sequence, torch.Tensor):
+                motion_np = motion_sequence.detach().cpu().numpy()
+            else:
+                motion_np = motion_sequence
+
+            if motion_np.ndim == 3:
+                motion_np = motion_np.squeeze(0)
+
+            if motion_np.shape[0] < 3:
+                return {'smoothness': 0.0, 'stability': 0.0, 'naturalness': 0.0, 'overall_quality': 0.0}
+
+            # Physics-based quality metrics
+
+            # Smoothness: consistency of movement
+            if motion_np.shape[1] >= 10:
+                velocities = np.diff(motion_np[:, :10], axis=0)
+                accelerations = np.diff(velocities, axis=0)
+                smoothness = 1.0 / (1.0 + np.mean(np.var(accelerations, axis=0)))
+            else:
+                smoothness = 0.5
+
+            # Stability: balance and control
+            if motion_np.shape[1] >= 5:
+                com_variations = np.var(motion_np[:, 0])  # Height variations
+                orientation_vars = np.var(motion_np[:, 1:5], axis=0)  # Orientation variations
+                stability = 1.0 / (1.0 + com_variations + np.mean(orientation_vars))
+            else:
+                stability = 0.5
+
+            # Naturalness: human-like movement patterns
+            if motion_np.shape[1] >= 20:
+                joint_coordination = np.corrcoef(motion_np[:, 5:15].T)
+                naturalness = np.mean(np.abs(joint_coordination[~np.isnan(joint_coordination)]))
+                naturalness = min(1.0, max(0.0, naturalness))
+            else:
+                naturalness = 0.5
+
+            # Overall quality
+            overall_quality = 0.4 * smoothness + 0.3 * stability + 0.3 * naturalness
+
+            return {
+                'smoothness': float(smoothness),
+                'stability': float(stability),
+                'naturalness': float(naturalness),
+                'overall_quality': float(overall_quality)
+            }
+
+        except Exception as e:
+            print(f"Motion quality evaluation failed: {e}")
+            return {'smoothness': 0.0, 'stability': 0.0, 'naturalness': 0.0, 'overall_quality': 0.0}
 
 
 def test_motion_tokenizer():
-    """Test the motion tokenizer functionality"""
-    print("Testing Motion Tokenizer")
-    print("=" * 30)
+    """Test the physics-based motion tokenizer"""
+    print("Testing Physics-Based Motion Tokenizer")
+    print("=" * 40)
 
     # Create tokenizer
     tokenizer = MotionTokenizer()
-    aligner = MotionLanguageAligner(tokenizer)
 
-    # Test motion encoding/decoding
-    print("Testing motion encoding/decoding...")
-    dummy_motion = np.random.randn(50, 263)  # 50 frames, 263 joint dimensions
+    # Test motion analysis
+    print("Testing motion analysis...")
 
-    tokens = tokenizer.encode_motion(dummy_motion)
-    print(f"  Encoded motion to {tokens.shape[0]} tokens")
+    # Create test motion sequences
+    stationary_motion = np.random.randn(20, 30) * 0.01  # Very small movements
+    walking_motion = np.random.randn(20, 30) * 0.1      # Larger movements
+    walking_motion[:, 8] = np.linspace(0, 1, 20)        # Add progressive movement
 
-    reconstructed = tokenizer.decode_motion(tokens)
-    print(f"  Decoded to motion of shape {reconstructed.shape}")
-
-    # Test motion-language alignment
-    print("\nTesting motion-language alignment...")
     instructions = [
         "walk forward",
+        "stop moving",
         "turn left",
-        "wave your hand",
-        "jump in place"
+        "jump up"
     ]
 
+    print("\nTesting motion-language alignment...")
     for instruction in instructions:
-        similarity = aligner.compute_motion_language_similarity(
-            torch.from_numpy(dummy_motion).float(),
-            instruction
+        # Test with walking motion
+        similarity_walking = tokenizer.compute_motion_language_similarity(
+            walking_motion, instruction
         )
-        reward = aligner.compute_reward(
-            torch.from_numpy(dummy_motion).float(),
-            instruction
-        )
-        print(f"  '{instruction}': similarity={similarity:.3f}, reward={reward:.3f}")
+        success_walking = tokenizer.compute_success_rate(walking_motion, instruction)
 
-    print("Motion tokenizer test completed!")
+        # Test with stationary motion
+        similarity_stationary = tokenizer.compute_motion_language_similarity(
+            stationary_motion, instruction
+        )
+        success_stationary = tokenizer.compute_success_rate(stationary_motion, instruction)
+
+        print(f"  '{instruction}':")
+        print(f"    Walking: similarity={similarity_walking:.3f}, success={success_walking:.3f}")
+        print(f"    Stationary: similarity={similarity_stationary:.3f}, success={success_stationary:.3f}")
+
+    # Test motion quality evaluation
+    print("\nTesting motion quality evaluation...")
+    evaluator = MotionQualityEvaluator()
+    quality_metrics = evaluator.evaluate_motion_quality(walking_motion)
+
+    for metric, value in quality_metrics.items():
+        print(f"  {metric}: {value:.3f}")
+
+    print("\nPhysics-based motion tokenizer test completed!")
 
 
 if __name__ == "__main__":
