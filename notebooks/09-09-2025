@@ -1,0 +1,119 @@
+Key files / folders
+
+demo_motion_language_agent.py
+Demo runner. Loads the PPO model, auto-loads VecNormalize stats if found,
+supports single-instruction demo, sequence mode, and benchmark.
+Live view (window) and/or video recording are supported.
+
+src/agents/hierarchical_agent.py
+EnhancedMotionLanguageAgent -> training/eval utilities (PPO + VecNormalize).
+DirectMotionLanguageWrapper -> instruction-aware rewards, success/quality metrics,
+yaw-rate turning signal, upright/balance bonus, progress bonus.
+
+scripts/train_walk_forward.py
+Small training script for “walk forward”. Adds repo_root/src to sys.path,
+trains with VecNormalize, and saves model + vecnormalize.pkl.
+
+wf_checkpoints/ or test_checkpoints/
+Where models (final_model_*.zip) and vecnormalize.pkl are saved.
+
+How I run a DEMO
+
+Example (live window on, video off):
+python demo_motion_language_agent.py
+--model-path "test_checkpoints/final_model_walk_forward.zip"
+--instructions "walk forward"
+--steps 300
+--live-view
+
+Notes:
+
+The demo now resets automatically when the Humanoid falls, so it always
+runs the requested number of steps.
+
+If vecnormalize.pkl is next to the model, it is auto-loaded (important for Humanoid).
+
+Overlay shows: Similarity / Success / Quality / Reward and optional debug values.
+
+Benchmark mode:
+python demo_motion_language_agent.py --model-path "..." --benchmark
+
+Sequence mode (one env, multiple instructions in a row):
+python demo_motion_language_agent.py --model-path "..." --sequence --instructions "walk forward" "turn left" --steps 200
+
+How I TRAIN “walk forward”
+
+Run:
+python scripts/train_walk_forward.py
+
+What it does:
+
+Creates EnhancedMotionLanguageAgent("Humanoid-v4")
+
+Trains with PPO:
+total_timesteps=300_000 (increase to 400k–1M for better results)
+language_reward_weight=0.8
+use_vecnormalize=True (saves vecnormalize.pkl)
+
+Saves to: ./wf_checkpoints/final_model_walk_forward.zip (+ vecnormalize.pkl)
+
+After training, demo the new model:
+python demo_motion_language_agent.py
+--model-path "wf_checkpoints/final_model_walk_forward.zip"
+--instructions "walk forward"
+--steps 300
+--live-view
+
+Small tweaks that help
+
+Deterministic actions (steadier motion during demo):
+action, _ = self.agent.predict(obs, deterministic=True)
+(By default I left it a bit stochastic for movement.)
+
+Reduce falling (upright bonus):
+In DirectMotionLanguageWrapper.step(), bump the balance bonuses slightly,
+e.g. height>0.6 → +0.25 and |roll|<0.4 → +0.15.
+
+Forward progress shaping:
+In _compute_instruction_progress_bonus(), you can raise the x_movement
+multiplier from 0.10 to ~0.15 for “walk forward”.
+
+Env version:
+The v4 deprecation warning is harmless; once stable, move to Humanoid-v5.
+
+Common issues and fixes
+
+ModuleNotFoundError: No module named 'src'
+scripts/train_walk_forward.py already appends <repo_root>/src to sys.path.
+Alternative environment fix:
+PowerShell: $env:PYTHONPATH = (Get-Location).Path + "\src"
+Git Bash: export PYTHONPATH="$PWD/src"
+
+NameError: reward in overlay
+Fixed. The overlay now uses a local step_reward derived from the env step.
+
+Mujoco render/solver_iter errors
+We render via rgb_array (off-screen) for frames; live-view works through that,
+so it’s stable on Windows.
+
+Quick copy/paste commands
+
+Train (writes wf_checkpoints/final_model_walk_forward.zip + vecnormalize.pkl)
+
+python scripts/train_walk_forward.py
+
+Demo (live view)
+
+python demo_motion_language_agent.py
+--model-path "wf_checkpoints/final_model_walk_forward.zip"
+--instructions "walk forward"
+--steps 300
+--live-view
+
+Benchmark
+
+python demo_motion_language_agent.py --model-path "wf_checkpoints/final_model_walk_forward.zip" --benchmark
+
+Sequence
+
+python demo_motion_language_agent.py --model-path "wf_checkpoints/final_model_walk_forward.zip" --sequence --instructions "walk forward" "turn left" --steps 200
