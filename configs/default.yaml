@@ -1,31 +1,207 @@
-# Experiment Configuration Template
+# Enhanced Motion-Language Control Configuration
+# Direct MotionGPT integration without pixel rendering
+
 experiment:
-  name: "motion_language_baseline"
-  seed: 42
+  name: "direct_motion_language_learning"
+  description: "Enhanced motion-language control using direct MotionGPT integration"
+  version: "2.0"
+  authors: ["Yunus Emre Balci"]
+  institution: "SDU"
 
+# Environment Configuration
 environment:
-  name: "Humanoid-v4"
+  name: "Humanoid-v4"  # Primary environment
+  alternatives: ["HalfCheetah-v4", "Ant-v4", "Walker2d-v4"]
   max_episode_steps: 1000
+  render_mode: null  # No rendering needed for training!
 
-model:
-  motion_tokenizer:
-    vocab_size: 512
-    hidden_dim: 256
-  language_encoder:
-    model_name: "t5-small"
-    freeze_weights: false
-
+# Enhanced Training Configuration
 training:
-  algorithm: "PPO"
-  total_timesteps: 100000
-  learning_rate: 3e-4
-  batch_size: 64
+  # Timesteps per instruction (adjust based on complexity)
+  total_timesteps_per_instruction: 100000
 
-evaluation:
+  # Language reward weights for curriculum learning
+  # Progressive increase in language supervision
+  language_reward_weights: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+  # Parallel training for efficiency
+  n_parallel_envs: 4
+  use_multiprocessing: false  # Set to true for large-scale training
+
+  # Evaluation and checkpointing
   eval_freq: 10000
-  n_eval_episodes: 10
+  checkpoint_freq: 5000
 
+  # PPO Hyperparameters (optimized for language-conditioned learning)
+  learning_rate: 3e-4
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.01  # Encourage exploration
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+
+# Instruction Curricula
+instructions:
+  # Basic locomotion instructions
+  basic:
+    - "walk forward"
+    - "walk backward"
+    - "turn left"
+    - "turn right"
+    - "stop moving"
+
+  # Intermediate complexity with modifiers
+  intermediate:
+    - "walk forward slowly"
+    - "walk forward quickly"
+    - "run forward"
+    - "turn left while walking"
+    - "turn right while walking"
+    - "walk in place"
+
+  # Advanced multi-step and complex behaviors
+  advanced:
+    - "walk in a circle"
+    - "walk forward then turn left"
+    - "walk backward then turn around"
+    - "jump up and down"
+    - "wave your hand while walking"
+    - "crouch down low"
+    - "walk sideways to the left"
+    - "walk sideways to the right"
+    - "run in a circle"
+    - "march in place"
+
+  # Expert-level complex sequences
+  expert:
+    - "walk forward slowly then speed up"
+    - "turn left then walk backward"
+    - "jump three times then walk forward"
+    - "wave both hands while walking forward"
+    - "walk in a figure eight pattern"
+    - "crouch walk forward"
+    - "walk forward then jump then continue walking"
+
+# Enhanced Evaluation Configuration
+evaluation:
+  n_eval_episodes: 10
+  eval_deterministic: true
+  cross_evaluation: true  # Test each model on all instructions
+  benchmark_against_clip: true  # Benchmark speed improvements
+
+  # Analysis settings
+  compute_similarity_metrics: true
+  track_computation_times: true
+  save_episode_videos: false  # Set to true if you want videos
+
+  # Success thresholds
+  similarity_threshold_good: 0.6
+  similarity_threshold_excellent: 0.8
+  reward_threshold_success: 100.0
+
+# MotionGPT Integration Settings
+motion_gpt:
+  # Paths to MotionGPT model (set these if you have trained models)
+  config_path: null  # e.g., "external/motiongpt/configs/config_vq.yaml"
+  checkpoint_path: null  # e.g., "external/motiongpt/checkpoints/best_model.pth"
+
+  # Language model for instruction encoding
+  language_model: "t5-small"  # or "t5-base" for better performance
+
+  # Motion processing settings
+  motion_dim: 263  # MotionGPT standard dimension
+  max_sequence_length: 196
+  codebook_size: 512
+  latent_dim: 256
+
+  # Reward computation settings
+  temporal_aggregation: "weighted_recent"  # "mean", "max", "last", "weighted_recent"
+  reward_smoothing: 0.9  # Temporal smoothing factor
+  success_threshold: 0.6
+
+  # Motion feature extraction
+  motion_history_length: 20
+  motion_normalization: true
+
+# Hierarchical Learning Settings
+hierarchical:
+  use_hierarchical_structure: true
+  low_level_freq: 10  # Low-level policy frequency
+  high_level_freq: 1   # High-level policy frequency
+
+  # Skill discovery (future work)
+  discover_skills: false
+  skill_embedding_dim: 64
+  n_discovered_skills: 16
+
+# Logging and Monitoring
 logging:
-  use_wandb: true
-  project_name: "motion-language-control"
-  log_dir: "./logs"
+  tensorboard_log: "./logs/"
+  wandb_project: null  # Set for Weights & Biases logging
+  log_level: "INFO"
+  save_model_every_n_steps: 10000
+
+  # Metrics to track
+  track_metrics:
+    - "motion_language_similarity"
+    - "language_reward"
+    - "original_env_reward"
+    - "episode_length"
+    - "computation_time"
+    - "motion_variance"
+
+# Experimental Features
+experimental:
+  # Advanced reward shaping
+  use_progress_bonus: true
+  use_instruction_specific_rewards: true
+
+  # Motion augmentation
+  use_motion_augmentation: false
+  augmentation_noise_std: 0.01
+
+  # Curriculum learning
+  adaptive_curriculum: false  # Automatically adjust difficulty
+  curriculum_success_threshold: 0.75
+
+  # Multi-modal learning (future)
+  use_visual_features: false
+  use_audio_instructions: false
+
+# Hardware and Performance
+hardware:
+  device: "auto"  # "cuda", "cpu", or "auto"
+  mixed_precision: false  # Enable for faster training on modern GPUs
+  compile_model: false    # PyTorch 2.0+ compilation
+
+  # Memory management
+  gradient_accumulation_steps: 1
+  max_memory_usage_gb: 8.0
+
+# Publication and Reproducibility
+reproducibility:
+  seed: 42
+  deterministic_training: false  # Set to true for reproducible results
+  save_random_state: true
+
+  # For academic publication
+  save_training_curves: true
+  save_model_architecture: true
+  save_hyperparameters: true
+  generate_performance_plots: true
+
+# Comparison Baselines
+baselines:
+  # Compare against these approaches
+  clip_based_reward: true
+  pixel_rendering_time: 7  # ms (for simulation)
+  clip_encoding_time: 15   # ms (for simulation)
+
+  # Other baselines to implement
+  random_policy: false
+  pretrained_locomotion: false
+  vision_based_reward: false

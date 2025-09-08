@@ -1,0 +1,30 @@
+{
+  "mean_speedup": 10.0,
+  "std_speedup": 0.0,
+  "mean_time_savings_ms": 20.0,
+  "instructions_tested": [
+    "walk forward",
+    "walk backward",
+    "turn left"
+  ],
+  "individual_results": {
+    "walk forward": {
+      "speedup": 10.0,
+      "time_savings_ms": 20.0,
+      "direct_time_ms": 2.0,
+      "clip_time_ms": 22.0
+    },
+    "walk backward": {
+      "speedup": 10.0,
+      "time_savings_ms": 20.0,
+      "direct_time_ms": 2.0,
+      "clip_time_ms": 22.0
+    },
+    "turn left": {
+      "speedup": 10.0,
+      "time_savings_ms": 20.0,
+      "direct_time_ms": 2.0,
+      "clip_time_ms": 22.0
+    }
+  }
+}
