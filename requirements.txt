@@ -1,5 +1,5 @@
 # Enhanced Motion-Language Control Requirements
-# Core dependencies for direct MotionGPT integration
+# Core dependencies for direct MotionGPT integration with video recording
 
 # Deep Learning Framework
 torch>=2.0.0
@@ -22,9 +22,16 @@ scipy>=1.10.0
 pandas>=2.0.0
 scikit-learn>=1.3.0
 
-# Computer Vision (minimal, since we avoid pixel rendering)
+# Computer Vision and Video Processing
 opencv-python>=4.8.0
 pillow>=10.0.0
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.8
+moviepy>=1.0.3
+
+# Video and Image Processing
+ffmpeg-python>=0.2.0
+av>=10.0.0
 
 # Plotting and Visualization
 matplotlib>=3.7.0
@@ -36,20 +43,17 @@ tensorboard>=2.13.0
 PyYAML>=6.0
 json5>=0.9.0
 h5py>=3.9.0
+omegaconf>=2.3.0
 
 # Progress Bars and Logging
 tqdm>=4.65.0
-wandb>=0.15.0  # Optional: for advanced logging
+wandb>=0.15.0
 rich>=13.4.0
 
-# Video Recording (optional)
-imageio>=2.31.0
-imageio-ffmpeg>=0.4.8
-moviepy>=1.0.3
-
-# Parallel Processing
+# Parallel Processing and Performance
 multiprocessing-logging>=0.3.4
 psutil>=5.9.0
+memory-profiler>=0.61.0
 
 # Development and Testing
 pytest>=7.4.0
@@ -57,57 +61,42 @@ pytest-cov>=4.1.0
 black>=23.7.0
 flake8>=6.0.0
 
-# Optional: Advanced Features
-# einops>=0.6.1        # For tensor operations
-# hydra-core>=1.3.0    # For advanced configuration management
-# optuna>=3.3.0        # For hyperparameter optimization
-
 # MuJoCo Physics Engine
 mujoco>=2.3.0
 
-<<<<<<< HEAD
 # Data processing and utilities
-numpy>=1.21.0
-scipy
-pandas
-scikit-learn
-matplotlib
-seaborn
-tqdm
-pyyaml
-omegaconf
-
-# Experiment tracking and logging
-wandb
-tensorboard
-
-# Motion and 3D processing (for MotionGPT integration)
-trimesh
-open3d
-opencv-python
-
-# Language processing (for MotionGPT)
-spacy
-nltk
-
-# Development tools
-pytest
-black
-flake8
-jupyter
-ipykernel
-
-# Optional: for advanced motion processing
-
-=======
-# Additional Utilities
+einops>=0.6.1
 pathlib2>=2.3.7
-datetime>=4.9
-argparse>=1.4.0
 collections-extended>=2.0.2
 typing-extensions>=4.7.0
->>>>>>> 8470d39 (added and changed)
 
-# Memory and Performance
-memory-profiler>=0.61.0
-py-spy>=0.3.14  # Optional: for performance profiling
+
+# Additional Utilities
+hashlib-compat>=1.0.0
+datetime>=4.9
+argparse>=1.4.0
+
+# Optional: Advanced Features
+# optuna>=3.3.0        # For hyperparameter optimization
+# hydra-core>=1.3.0    # For advanced configuration management
+# ray[tune]>=2.7.0     # For distributed training and hyperparameter tuning
+
+# Video codec support
+x264>=0.164
+libx264-dev>=0.164
+
+# Audio processing (for future multimodal extensions)
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# 3D processing (for advanced motion analysis)
+trimesh>=3.21.0
+open3d>=0.17.0
+
+# Networking (for distributed training)
+requests>=2.31.0
+urllib3>=2.0.0
+
+# System utilities
+click>=8.1.0
+colorama>=0.4.6
