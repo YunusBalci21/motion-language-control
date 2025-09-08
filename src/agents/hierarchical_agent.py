@@ -185,7 +185,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             return 0.0, 0.0, 0.0, {}
 
     def _compute_instruction_progress_bonus(self) -> float:
-        """Compute instruction-specific progress bonus"""
+        """Compute instruction-specific progress bonus - FIXED FOR TURNING"""
         if len(self.motion_history) < 10:
             return 0.0
 
@@ -194,23 +194,99 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             instruction_lower = self.current_instruction.lower()
 
             if "forward" in instruction_lower:
+                # Forward movement bonus
                 if recent_motion.shape[1] > 0:
                     x_movement = recent_motion[-1, 0] - recent_motion[0, 0]
                     return max(0.0, x_movement * 0.1)
 
             elif "backward" in instruction_lower:
+                # Backward movement bonus
                 if recent_motion.shape[1] > 0:
                     x_movement = recent_motion[0, 0] - recent_motion[-1, 0]  # Negative movement
                     return max(0.0, x_movement * 0.1)
 
+            elif "turn left" in instruction_lower:
+                # Enhanced left turn detection
+                if recent_motion.shape[1] >= 8:
+                    # Check yaw angle changes (index 1 is yaw)
+                    yaw_start = recent_motion[0, 1] if recent_motion.shape[1] > 1 else 0
+                    yaw_end = recent_motion[-1, 1] if recent_motion.shape[1] > 1 else 0
+                    yaw_change = yaw_end - yaw_start
+
+                    # Check for overall movement + turning
+                    movement_bonus = 0.0
+                    if recent_motion.shape[1] > 24:  # Has movement magnitude feature
+                        movement_mag = np.mean(recent_motion[:, 24])
+                        if movement_mag > 0.02:  # Agent is moving
+                            movement_bonus = 0.1
+
+                    # Positive yaw change = left turn (assuming standard convention)
+                    turn_bonus = max(0.0, yaw_change * 2.0)  # Reward positive yaw changes
+
+                    # Also check orientation quaternion changes as backup
+                    if recent_motion.shape[1] >= 8:
+                        quat_changes = np.diff(recent_motion[:, 4:8], axis=0)  # Quaternion changes
+                        orientation_activity = np.mean(np.abs(quat_changes))
+                        orientation_bonus = min(0.2, orientation_activity * 5.0)
+                    else:
+                        orientation_bonus = 0.0
+
+                    total_bonus = turn_bonus + movement_bonus + orientation_bonus
+                    return min(0.5, total_bonus)  # Cap at 0.5
+
+            elif "turn right" in instruction_lower:
+                # Enhanced right turn detection
+                if recent_motion.shape[1] >= 8:
+                    yaw_start = recent_motion[0, 1] if recent_motion.shape[1] > 1 else 0
+                    yaw_end = recent_motion[-1, 1] if recent_motion.shape[1] > 1 else 0
+                    yaw_change = yaw_start - yaw_end  # Negative yaw change = right turn
+
+                    movement_bonus = 0.0
+                    if recent_motion.shape[1] > 24:
+                        movement_mag = np.mean(recent_motion[:, 24])
+                        if movement_mag > 0.02:
+                            movement_bonus = 0.1
+
+                    turn_bonus = max(0.0, yaw_change * 2.0)  # Reward negative yaw changes
+
+                    if recent_motion.shape[1] >= 8:
+                        quat_changes = np.diff(recent_motion[:, 4:8], axis=0)
+                        orientation_activity = np.mean(np.abs(quat_changes))
+                        orientation_bonus = min(0.2, orientation_activity * 5.0)
+                    else:
+                        orientation_bonus = 0.0
+
+                    total_bonus = turn_bonus + movement_bonus + orientation_bonus
+                    return min(0.5, total_bonus)
+
             elif "turn" in instruction_lower:
-                if recent_motion.shape[1] > 2:
-                    orientation_change = np.var(recent_motion[:, 2:5])
-                    return min(0.2, orientation_change * 0.5)
+                # Generic turn detection (any direction)
+                if recent_motion.shape[1] >= 8:
+                    # Check for any yaw changes
+                    yaw_changes = np.diff(recent_motion[:, 1])  # Yaw changes
+                    yaw_activity = np.mean(np.abs(yaw_changes))
+
+                    # Check for orientation changes
+                    if recent_motion.shape[1] >= 8:
+                        quat_changes = np.diff(recent_motion[:, 4:8], axis=0)
+                        orientation_activity = np.mean(np.abs(quat_changes))
+                    else:
+                        orientation_activity = 0.0
+
+                    # Check for movement while turning
+                    movement_bonus = 0.0
+                    if recent_motion.shape[1] > 24:
+                        movement_mag = np.mean(recent_motion[:, 24])
+                        if movement_mag > 0.02:
+                            movement_bonus = 0.1
+
+                    turn_bonus = yaw_activity * 3.0 + orientation_activity * 2.0
+                    total_bonus = turn_bonus + movement_bonus
+                    return min(0.4, total_bonus)
 
             elif "jump" in instruction_lower:
                 if recent_motion.shape[1] > 1:
-                    z_movement = np.max(recent_motion[-5:, 1]) - np.min(recent_motion[-5:, 1])
+                    z_movement = np.max(recent_motion[-5:, 0]) - np.min(recent_motion[-5:, 0])
                     return min(0.3, z_movement * 0.2)
 
             elif "stop" in instruction_lower or "still" in instruction_lower:
@@ -251,6 +327,23 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         # Total language reward
         total_language_reward = language_reward + progress_bonus
 
+        # Add balance/upright bonus to prevent falling
+        balance_bonus = 0.0
+        if len(self.motion_history) > 0:
+            recent_motion = np.array(list(self.motion_history)[-1:])
+            if recent_motion.shape[1] >= 30:
+                # Height bonus (staying upright)
+                height = recent_motion[0, 0] if recent_motion.shape[1] > 0 else 0.0
+                if height > 0.5:  # Reasonable standing height
+                    balance_bonus += 0.2
+
+                # Orientation bonus (not falling over)
+                roll = recent_motion[0, 3] if recent_motion.shape[1] > 3 else 0.0
+                if abs(roll) < 0.5:  # Not tilted too much
+                    balance_bonus += 0.1
+
+        total_language_reward += balance_bonus
+
         # Combine with environment reward
         if self.language_reward_weight > 0:
             total_reward = ((1 - self.language_reward_weight) * env_reward +
@@ -271,6 +364,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             'motion_language_similarity': similarity,
             'success_rate': success_rate,
             'progress_bonus': progress_bonus,
+            'balance_bonus': balance_bonus,
             'original_reward': env_reward,
             'instruction': self.current_instruction,
             'motion_history_length': len(self.motion_history),
