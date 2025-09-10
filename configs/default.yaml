@@ -53,6 +53,10 @@ instructions:
     - "turn left"
     - "turn right"
     - "stop moving"
+    - "walk stably"
+    - "walk but not fall"
+    - "move forward slowly"
+    - "keep your balance"
 
   # Intermediate complexity with modifiers
   intermediate:
@@ -62,6 +66,12 @@ instructions:
     - "turn left while walking"
     - "turn right while walking"
     - "walk in place"
+    - "walk forward without falling"
+    - "move steadily forward"
+    - "walk and maintain balance"
+    - "walk smoothly forward"
+    - "take careful steps forward"
+    - "walk forward with good posture"
 
   # Advanced multi-step and complex behaviors
   advanced:
@@ -75,6 +85,23 @@ instructions:
     - "walk sideways to the right"
     - "run in a circle"
     - "march in place"
+    - "walk forward for 10 steps then stop"
+    - "turn around and walk back"
+    - "walk forward while staying upright"
+    - "move forward with smooth motions"
+    - "walk forward and keep your head up"
+
+  stability_focused:
+    - "walk stably without falling"
+    - "maintain balance while moving"
+    - "walk with good balance"
+    - "move forward but stay upright"
+    - "walk carefully without stumbling"
+    - "take stable steps forward"
+    - "walk with good posture and balance"
+    - "move steadily and don't fall"
+    - "walk forward and keep your balance"
+    - "move smoothly without losing balance"
 
   # Expert-level complex sequences
   expert:
