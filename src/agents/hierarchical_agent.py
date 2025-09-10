@@ -281,7 +281,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             return smoothed, float(similarity), float(success_rate), quality_metrics
 
         except Exception as e:
-            print(f"Enhanced reward computation failed: {e}")
+            print(f"reward computation failed: {e}")
             return 0.0, 0.0, 0.0, {}
 
     # ----------------------- Progress bonuses (turn/walk) ---------------------- #
