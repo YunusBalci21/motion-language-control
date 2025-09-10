@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import gymnasium as gym
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.vec_env import (
     DummyVecEnv,
     SubprocVecEnv,
@@ -24,6 +24,7 @@ from stable_baselines3.common.vec_env import (
 )
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.noise import NormalActionNoise
 import imageio
 
 # --------------------------------------------------------------------------
@@ -219,7 +220,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
     # -------------------- Language reward & metrics ----------------------- #
     def _compute_enhanced_motion_language_reward(self) -> Tuple[float, float, float, dict]:
         """
-        Compute enhanced motion-language reward with success rate.
+        FIXED: Compute enhanced motion-language reward with proper temporal handling
         Returns: (language_reward, similarity, success_rate, quality_metrics)
         """
         if len(self.motion_history) < 5:
@@ -227,37 +228,38 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
 
         start_time = time.time()
         try:
-            # Choose motion aggregation
+            # FIXED: Use proper temporal sequences instead of single-frame averaging
             if self.reward_aggregation == "recent_window":
                 motion_sequence = np.array(list(self.motion_history)[-10:])
             elif self.reward_aggregation == "full_sequence":
                 motion_sequence = np.array(list(self.motion_history))
             elif self.reward_aggregation == "weighted_recent":
-                motion_list = list(self.motion_history)
-                weights = np.exp(np.linspace(-1, 0, len(motion_list)))
-                weighted_motion = np.average(motion_list, axis=0, weights=weights)
-                motion_sequence = np.expand_dims(weighted_motion, axis=0)
+                # FIXED: Keep temporal dimension instead of averaging to single frame
+                motion_sequence = np.array(list(self.motion_history)[-10:])  # Keep last 10 frames
             else:
                 motion_sequence = np.array(list(self.motion_history)[-10:])
 
+            # Convert to tensor - KEEP temporal dimension
             motion_tensor = torch.from_numpy(motion_sequence).float()
             if motion_tensor.dim() == 2:
-                motion_tensor = motion_tensor.unsqueeze(0)
+                motion_tensor = motion_tensor.unsqueeze(0)  # Add batch dim if needed
 
-            # Similarity & success (from tokenizer)
+            # FIXED: Use direct similarity computation (same as debug script)
             similarity = self.motion_tokenizer.compute_motion_language_similarity(
                 motion_tensor,
                 self.current_instruction,
-                temporal_aggregation="weighted_recent",
+                temporal_aggregation="mean"  # Let the tokenizer handle aggregation
             )
+
             success_rate = self.motion_tokenizer.compute_success_rate(
                 motion_tensor, self.current_instruction
             )
+
             quality_metrics = self.motion_tokenizer.motion_evaluator.evaluate_motion_quality(
                 motion_tensor
             )
 
-            # Base reward
+            # Base reward from similarity
             base_reward = float(similarity) * self.reward_scale
 
             # Success bonus
@@ -272,8 +274,8 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
 
             total_language_reward = base_reward + success_bonus + quality_bonus
 
-            # Temporal smoothing
-            smoothed = self.reward_smoothing * self.prev_language_reward + (1 - self.reward_smoothing) * total_language_reward
+            # Temporal smoothing (reduced to preserve signal)
+            smoothed = 0.7 * self.prev_language_reward + 0.3 * total_language_reward  # Less smoothing
             self.prev_language_reward = smoothed
 
             self.computation_times.append(time.time() - start_time)
@@ -281,7 +283,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             return smoothed, float(similarity), float(success_rate), quality_metrics
 
         except Exception as e:
-            print(f"reward computation failed: {e}")
+            print(f"Enhanced reward computation failed: {e}")
             return 0.0, 0.0, 0.0, {}
 
     # ----------------------- Progress bonuses (turn/walk) ---------------------- #
@@ -579,7 +581,7 @@ class EnhancedMotionLanguageAgent:
         self._test_environment_creation()
 
         # RL agent
-        self.rl_agent: Optional[PPO] = None
+        self.rl_agent: Optional[Union[PPO, SAC]] = None
 
         # PPO configuration
         self.training_config = {
@@ -596,6 +598,131 @@ class EnhancedMotionLanguageAgent:
         }
 
         print("Motion-Language Agent initialized successfully")
+
+    def _run_evaluation(self, instruction, language_reward_weight, num_episodes,
+                       render, deterministic, record_video, video_path, model_path=None):
+        """Common evaluation logic for both PPO and SAC"""
+        # Build eval environment
+        render_mode = "human" if render else "rgb_array" if record_video else None
+        venv: VecEnv = DummyVecEnv(
+            [
+                lambda: self._make_single_env(
+                    instruction=instruction,
+                    language_reward_weight=language_reward_weight,
+                    record_video=record_video,
+                    video_path=video_path,
+                    render_mode=render_mode,
+                )
+            ]
+        )
+
+        # Try to load normalization stats
+        if model_path:
+            stats_path = self._find_vecnormalize_stats(model_path)
+            if stats_path and stats_path.exists():
+                try:
+                    venv = VecNormalize.load(str(stats_path), venv)
+                    venv.training = False
+                    venv.norm_reward = False
+                    print(f"Loaded VecNormalize stats from: {stats_path}")
+                except Exception as e:
+                    print(f"Failed to load VecNormalize: {e}")
+
+        # Make sure policy is in eval mode
+        self.rl_agent.policy.eval()
+
+        # Run evaluation episodes
+        episode_results = []
+        total_success_count = 0
+
+        for ep in range(num_episodes):
+            obs = venv.reset()
+            if isinstance(obs, tuple):
+                obs = obs[0]
+
+            ep_data = {
+                "total_reward": 0.0,
+                "language_reward": 0.0,
+                "env_reward": 0.0,
+                "similarities": [],
+                "success_rates": [],
+                "motion_quality": {"smoothness": [], "stability": [], "naturalness": [], "overall_quality": []},
+            }
+
+            episode_success = False
+            for step in range(1000):
+                action, _ = self.rl_agent.predict(obs, deterministic=deterministic)
+                obs, rewards, dones, infos = venv.step(action)
+
+                r = float(rewards[0])
+                info0 = infos[0] if isinstance(infos, (list, tuple)) and infos else {}
+
+                ep_data["total_reward"] += r
+                ep_data["language_reward"] += float(info0.get("language_reward", 0.0))
+                ep_data["env_reward"] += float(info0.get("original_reward", 0.0))
+                ep_data["similarities"].append(float(info0.get("motion_language_similarity", 0.0)))
+                ep_data["success_rates"].append(float(info0.get("success_rate", 0.0)))
+                ep_data["motion_quality"]["smoothness"].append(float(info0.get("motion_smoothness", 0.0)))
+                ep_data["motion_quality"]["stability"].append(float(info0.get("motion_stability", 0.0)))
+                ep_data["motion_quality"]["naturalness"].append(float(info0.get("motion_naturalness", 0.0)))
+                ep_data["motion_quality"]["overall_quality"].append(float(info0.get("motion_overall_quality", 0.0)))
+
+                if bool(info0.get("current_episode_success", False)):
+                    episode_success = True
+
+                if dones[0]:
+                    break
+
+            if episode_success:
+                total_success_count += 1
+            episode_results.append(ep_data)
+
+            print(
+                f"Episode {ep+1}: Total={ep_data['total_reward']:.2f}, "
+                f"Language={ep_data['language_reward']:.2f}, "
+                f"Similarity={np.mean(ep_data['similarities']) if ep_data['similarities'] else 0.0:.3f}, "
+                f"Success={episode_success}"
+            )
+
+        try:
+            venv.close()
+        except Exception:
+            pass
+
+        # Compute results
+        results = {
+            "instruction": instruction,
+            "num_episodes": num_episodes,
+            "mean_total_reward": float(np.mean([ep["total_reward"] for ep in episode_results])),
+            "std_total_reward": float(np.std([ep["total_reward"] for ep in episode_results])),
+            "mean_language_reward": float(np.mean([ep["language_reward"] for ep in episode_results])),
+            "mean_env_reward": float(np.mean([ep["env_reward"] for ep in episode_results])),
+            "mean_similarity": float(
+                np.mean([np.mean(ep["similarities"]) for ep in episode_results if ep["similarities"]])
+            ) if episode_results else 0.0,
+            "mean_success_rate": float(
+                np.mean([np.mean(ep["success_rates"]) for ep in episode_results if ep["success_rates"]])
+            ) if episode_results else 0.0,
+            "episode_success_rate": float(total_success_count / max(1, num_episodes)),
+            "total_successful_episodes": int(total_success_count),
+            "mean_motion_overall_quality": float(
+                np.mean([
+                    np.mean(ep["motion_quality"]["overall_quality"])
+                    for ep in episode_results
+                    if ep["motion_quality"]["overall_quality"]
+                ])
+            ) if episode_results else 0.0,
+            "episode_data": episode_results,
+        }
+
+        print(f"\nEvaluation Results for '{instruction}':")
+        print(f"  Mean Total Reward: {results['mean_total_reward']:.2f} ± {results['std_total_reward']:.2f}")
+        print(f"  Mean Language Reward: {results['mean_language_reward']:.2f}")
+        print(f"  Mean Motion-Language Similarity: {results['mean_similarity']:.3f}")
+        print(f"  Episode Success Rate: {results['episode_success_rate']:.1%}")
+        print(f"  Mean Motion Quality: {results['mean_motion_overall_quality']:.3f}")
+
+        return results
 
     # ---------------------------- Env helpers ----------------------------- #
     def _test_environment_creation(self):
@@ -855,192 +982,11 @@ class EnhancedMotionLanguageAgent:
             print("No trained agent available! Train first or provide model_path.")
             return {}
 
-        # Build eval venv
-        render_mode = "human" if render else "rgb_array" if record_video else None
-        venv: VecEnv = DummyVecEnv(
-            [
-                lambda: self._make_single_env(
-                    instruction=instruction,
-                    language_reward_weight=language_reward_weight,
-                    record_video=record_video,
-                    video_path=video_path,
-                    render_mode=render_mode,
-                )
-            ]
+        # Use common evaluation logic
+        return self._run_evaluation(
+            instruction, language_reward_weight, num_episodes,
+            render, deterministic, record_video, video_path, model_path
         )
-
-        # Try to load normalization stats near the model
-        stats_path = self._find_vecnormalize_stats(model_path) if model_path else None
-        if stats_path is not None:
-            try:
-                venv = VecNormalize.load(str(stats_path), venv)
-                venv.training = False
-                venv.norm_reward = False
-                print(f"Loaded VecNormalize stats from: {stats_path}")
-            except Exception as e:
-                print(f"WARN: Failed to load VecNormalize stats ({e}). Continuing without.")
-
-        # Make sure policy is in eval mode and deterministic
-        self.rl_agent.policy.eval()
-
-        base_env = self._underlying_gym_env(venv)
-
-        # Run episodes
-        episode_results = []
-        total_success_count = 0
-
-        for ep in range(num_episodes):
-            obs = venv.reset()
-            if isinstance(obs, tuple):  # sb3<->gym compat
-                obs = obs[0]
-            steps = 0
-            episode_success = False
-
-            ep_data = {
-                "total_reward": 0.0,
-                "language_reward": 0.0,
-                "env_reward": 0.0,
-                "steps": 0,
-                "similarities": [],
-                "success_rates": [],
-                "computation_times": [],
-                "motion_quality": {"smoothness": [], "stability": [], "naturalness": [], "overall_quality": []},
-            }
-
-            while steps < 1000:
-                action, _ = self.rl_agent.predict(obs, deterministic=deterministic)
-                obs, rewards, dones, infos = venv.step(action)
-
-                r = float(rewards[0])
-                info0 = infos[0] if isinstance(infos, (list, tuple)) and infos else {}
-
-                ep_data["total_reward"] += r
-                ep_data["language_reward"] += float(info0.get("language_reward", 0.0))
-                ep_data["env_reward"] += float(info0.get("original_reward", 0.0))
-                ep_data["similarities"].append(float(info0.get("motion_language_similarity", 0.0)))
-                ep_data["success_rates"].append(float(info0.get("success_rate", 0.0)))
-                ep_data["computation_times"].append(float(info0.get("avg_computation_time", 0.0)))
-                ep_data["motion_quality"]["smoothness"].append(float(info0.get("motion_smoothness", 0.0)))
-                ep_data["motion_quality"]["stability"].append(float(info0.get("motion_stability", 0.0)))
-                ep_data["motion_quality"]["naturalness"].append(float(info0.get("motion_naturalness", 0.0)))
-                ep_data["motion_quality"]["overall_quality"].append(float(info0.get("motion_overall_quality", 0.0)))
-
-                if bool(info0.get("current_episode_success", False)):
-                    episode_success = True
-
-                steps += 1
-
-                # Optional live render was handled by render_mode; just pull frame if needed
-                if render:
-                    try:
-                        base_env.render()
-                    except Exception:
-                        pass
-
-                if dones[0]:
-                    break
-
-            ep_data["steps"] = steps
-            ep_data["episode_success"] = episode_success
-            total_success_count += int(episode_success)
-            episode_results.append(ep_data)
-
-            print(
-                f"Episode {ep+1}: Total={ep_data['total_reward']:.2f}, "
-                f"Language={ep_data['language_reward']:.2f}, "
-                f"Similarity={np.mean(ep_data['similarities']) if ep_data['similarities'] else 0.0:.3f}, "
-                f"Success={episode_success}, Steps={steps}"
-            )
-
-        # Close eval env
-        try:
-            venv.close()
-        except Exception:
-            pass
-
-        # Aggregate stats
-        results = {
-            "instruction": instruction,
-            "num_episodes": num_episodes,
-            "mean_total_reward": float(np.mean([ep["total_reward"] for ep in episode_results])),
-            "std_total_reward": float(np.std([ep["total_reward"] for ep in episode_results])),
-            "mean_language_reward": float(np.mean([ep["language_reward"] for ep in episode_results])),
-            "mean_env_reward": float(np.mean([ep["env_reward"] for ep in episode_results])),
-            "mean_similarity": float(
-                np.mean([np.mean(ep["similarities"]) for ep in episode_results if ep["similarities"]])
-            )
-            if episode_results
-            else 0.0,
-            "mean_success_rate": float(
-                np.mean([np.mean(ep["success_rates"]) for ep in episode_results if ep["success_rates"]])
-            )
-            if episode_results
-            else 0.0,
-            "mean_episode_length": float(np.mean([ep["steps"] for ep in episode_results])),
-            "mean_computation_time": float(
-                np.mean([np.mean(ep["computation_times"]) for ep in episode_results if ep["computation_times"]])
-            )
-            if episode_results
-            else 0.0,
-            "episode_success_rate": float(total_success_count / max(1, num_episodes)),
-            "total_successful_episodes": int(total_success_count),
-            "mean_motion_smoothness": float(
-                np.mean(
-                    [
-                        np.mean(ep["motion_quality"]["smoothness"])
-                        for ep in episode_results
-                        if ep["motion_quality"]["smoothness"]
-                    ]
-                )
-            )
-            if episode_results
-            else 0.0,
-            "mean_motion_stability": float(
-                np.mean(
-                    [
-                        np.mean(ep["motion_quality"]["stability"])
-                        for ep in episode_results
-                        if ep["motion_quality"]["stability"]
-                    ]
-                )
-            )
-            if episode_results
-            else 0.0,
-            "mean_motion_naturalness": float(
-                np.mean(
-                    [
-                        np.mean(ep["motion_quality"]["naturalness"])
-                        for ep in episode_results
-                        if ep["motion_quality"]["naturalness"]
-                    ]
-                )
-            )
-            if episode_results
-            else 0.0,
-            "mean_motion_overall_quality": float(
-                np.mean(
-                    [
-                        np.mean(ep["motion_quality"]["overall_quality"])
-                        for ep in episode_results
-                        if ep["motion_quality"]["overall_quality"]
-                    ]
-                )
-            )
-            if episode_results
-            else 0.0,
-            "episode_data": episode_results,
-        }
-
-        print(f"\nEvaluation Results for '{instruction}':")
-        print(f"  Mean Total Reward: {results['mean_total_reward']:.2f} ± {results['std_total_reward']:.2f}")
-        print(f"  Mean Language Reward: {results['mean_language_reward']:.2f}")
-        print(f"  Mean Motion-Language Similarity: {results['mean_similarity']:.3f}")
-        print(f"  Episode Success Rate: {results['episode_success_rate']:.1%}")
-        print(f"  Mean Episode Length: {results['mean_episode_length']:.1f}")
-        print(f"  Mean Computation Time: {results['mean_computation_time']:.4f}s per step")
-        print(f"  Mean Motion Quality: {results['mean_motion_overall_quality']:.3f}")
-
-        return results
 
 
 # Backward compatibility alias

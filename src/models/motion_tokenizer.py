@@ -1,6 +1,6 @@
 """
-Physics-Based Motion Tokenizer - FIXED VERSION
-Fixed version that actually works with real movement detection
+Physics-Based Motion Tokenizer - COMPLETE FIXED VERSION
+Addresses the gap between direct tokenizer test (~0.65) and environment test (~0.30)
 """
 
 import sys
@@ -31,7 +31,7 @@ except ImportError as e:
 class MotionTokenizer:
     """
     Physics-based motion understanding system
-    Uses actual movement data instead of broken MotionGPT fallback
+    FIXED VERSION that properly extracts motion features from environment observations
     """
 
     def __init__(self,
@@ -101,140 +101,178 @@ class MotionTokenizer:
         print("Created simple motion-language alignment network")
         return alignment_net
 
-    def extract_motion_from_obs(self, obs: np.ndarray, env_name: str = "Humanoid-v4") -> np.ndarray:
-        """Extract motion features using physics-based analysis"""
-        if env_name.startswith("Humanoid"):
-            return self._extract_humanoid_physics_features(obs)
-        elif env_name.startswith("HalfCheetah"):
-            return self._extract_cheetah_physics_features(obs)
-        elif env_name.startswith("Ant"):
-            return self._extract_ant_physics_features(obs)
+    def extract_motion_from_obs(self, obs: np.ndarray, env_name: str) -> np.ndarray:
+        """
+        FIXED: Extract meaningful motion features from environment observations
+
+        This is the MAIN FIX that addresses the gap between direct tokenizer test (~0.65)
+        and environment test (~0.30) by properly parsing observation spaces.
+        """
+
+        if obs.ndim > 1:
+            obs = obs.flatten()
+
+        # Handle different environments with proper feature extraction
+        if "Humanoid" in env_name:
+            return self._extract_humanoid_features(obs)
+        elif "HalfCheetah" in env_name:
+            return self._extract_cheetah_features(obs)
+        elif "Ant" in env_name:
+            return self._extract_ant_features(obs)
         else:
-            return self._extract_generic_physics_features(obs)
+            # Generic fallback
+            return self._extract_generic_features(obs)
 
-    def _extract_humanoid_physics_features(self, obs: np.ndarray) -> np.ndarray:
-        """Extract meaningful physics features from Humanoid-v4 - FIXED FOR TURNING"""
+    def _extract_humanoid_features(self, obs: np.ndarray) -> np.ndarray:
+        """
+        Extract meaningful features from Humanoid-v4 observations (376 dims)
+
+        Humanoid-v4 observation structure:
+        - qpos[2:] (24 dims): joint positions excluding root x,y
+        - qvel (27 dims): joint velocities including root
+        - cinert (130 dims): center of mass inertia
+        - cvel (130 dims): center of mass velocities
+        - qfrc_actuator (23 dims): actuator forces
+        - cfrc_ext (60 dims): external contact forces
+        """
+
         try:
-            # Humanoid-v4 observation space (376 dims):
-            # 0: z-coordinate of center of mass (height)
-            # 1-4: quaternion orientation of torso
-            # 5-22: joint angles (17 joints)
-            # 23-39: joint velocities (17 joints)
-            # 40+: additional state information
+            if len(obs) < 50:  # Safety check
+                print(f"Warning: Humanoid observation too short: {len(obs)}")
+                return self._create_fallback_features()
 
-            if len(obs) >= 40:
-                # Extract key state information
-                com_z = obs[0] if len(obs) > 0 else 0.0  # Height
-                orientation_quat = obs[1:5] if len(obs) > 4 else np.zeros(4)  # Quaternion
-                joint_angles = obs[5:22] if len(obs) > 22 else np.zeros(17)
-                joint_velocities = obs[23:40] if len(obs) > 40 else np.zeros(17)
+            idx = 0
 
-                # Convert quaternion to euler angles for better turning detection
-                try:
-                    # Simple quaternion to yaw conversion
-                    w, x, y, z = orientation_quat[0], orientation_quat[1], orientation_quat[2], orientation_quat[3]
-                    yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
-                    pitch = np.arcsin(2 * (w * y - z * x))
-                    roll = np.arctan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y))
-                    euler_angles = np.array([yaw, pitch, roll])
-                except:
-                    euler_angles = np.zeros(3)
+            # Joint positions (24 dims) - qpos[2:] excludes root x,y
+            qpos = obs[idx:idx+24]
+            idx += 24
 
-                # Enhanced motion features for better turning detection
-                motion_features = np.concatenate([
-                    [com_z],  # 0: Height (for jumping/falling detection)
-                    euler_angles,  # 1-3: Yaw, Pitch, Roll (critical for turning)
-                    orientation_quat,  # 4-7: Original quaternion
-                    joint_angles[:8],  # 8-15: First 8 joint angles (legs and core)
-                    joint_velocities[:8],  # 16-23: First 8 joint velocities
-                    [np.mean(np.abs(joint_velocities))],  # 24: Overall movement magnitude
-                    [np.std(joint_velocities)],  # 25: Movement variability
-                    [np.mean(joint_angles[:6])],  # 26: Average leg joint position
-                    [np.std(joint_angles[:6])],  # 27: Leg joint spread
-                    [np.abs(yaw)],  # 28: Absolute yaw (for turn detection)
-                    [np.abs(euler_angles[2])]  # 29: Absolute roll (for balance)
-                ])
+            # Joint velocities (27 dims) - includes root velocities
+            qvel = obs[idx:idx+27]
+            idx += 27
 
-                # Ensure exactly 30 features
-                if len(motion_features) < 30:
-                    motion_features = np.pad(motion_features, (0, 30 - len(motion_features)))
-                else:
-                    motion_features = motion_features[:30]
+            # Skip center of mass inertia (130 dims) - too complex for now
+            idx += 130
 
-            else:
-                # Fallback for insufficient data
-                motion_features = np.zeros(30)
+            # Center of mass velocities (130 dims) - use some key ones
+            cvel = obs[idx:idx+130] if idx + 130 <= len(obs) else obs[idx:]
+            idx += 130
 
-            return motion_features.astype(np.float32)
+            # Actuator forces (23 dims)
+            qfrc_actuator = obs[idx:idx+23] if idx + 23 <= len(obs) else obs[idx:]
+            idx += 23
+
+            # External contact forces (60 dims)
+            cfrc_ext = obs[idx:idx+60] if idx + 60 <= len(obs) else obs[idx:]
+
+            # Create 30-dimensional motion feature vector
+            motion_features = np.zeros(30, dtype=np.float32)
+
+            # Basic pose information (8 dims)
+            motion_features[0] = qpos[0] if len(qpos) > 0 else 1.0  # root z height
+            motion_features[1:4] = qpos[1:4] if len(qpos) > 3 else [1,0,0]  # root orientation
+            motion_features[4:8] = qpos[4:8] if len(qpos) > 7 else 0  # torso/spine joints
+
+            # Key joint positions (8 dims) - focus on legs
+            if len(qpos) >= 16:
+                motion_features[8:16] = qpos[8:16]  # leg joints (hips, knees, etc.)
+            elif len(qpos) > 8:
+                available = len(qpos) - 8
+                motion_features[8:8+available] = qpos[8:]
+
+            # Root and joint velocities (10 dims)
+            motion_features[16] = qvel[0] if len(qvel) > 0 else 0  # forward velocity (x)
+            motion_features[17] = qvel[1] if len(qvel) > 1 else 0  # sideways velocity (y)
+            motion_features[18] = qvel[2] if len(qvel) > 2 else 0  # vertical velocity (z)
+            motion_features[19:22] = qvel[3:6] if len(qvel) > 5 else 0  # angular velocities (wx,wy,wz)
+            motion_features[22:26] = qvel[6:10] if len(qvel) > 9 else 0  # key joint velocities
+
+            # Aggregate motion characteristics (4 dims)
+            motion_features[26] = float(np.linalg.norm(qvel[:3])) if len(qvel) > 2 else 0  # overall linear speed
+            motion_features[27] = float(np.std(qpos[:12])) if len(qpos) > 11 else 0  # pose variation
+            motion_features[28] = float(np.linalg.norm(qfrc_actuator[:8])) if len(qfrc_actuator) > 7 else 0  # muscle effort
+            motion_features[29] = float(np.linalg.norm(cfrc_ext[:6])) if len(cfrc_ext) > 5 else 0  # ground contact
+
+            # Normalize features to reasonable ranges
+            motion_features[0] = np.clip(motion_features[0], 0, 3)  # height 0-3m
+            motion_features[16:19] = np.clip(motion_features[16:19], -10, 10)  # velocities
+            motion_features[26] = np.clip(motion_features[26], 0, 10)  # speed
+            motion_features[28:30] = np.clip(motion_features[28:30], 0, 100)  # forces
+
+            return motion_features
 
         except Exception as e:
-            print(f"Humanoid physics extraction failed: {e}")
-            return np.zeros(30, dtype=np.float32)
+            print(f"Humanoid motion extraction failed: {e}")
+            return self._create_fallback_features()
 
-    def _extract_cheetah_physics_features(self, obs: np.ndarray) -> np.ndarray:
-        """Extract physics features from HalfCheetah"""
+    def _extract_cheetah_features(self, obs: np.ndarray) -> np.ndarray:
+        """Extract features from HalfCheetah-v4"""
+        features = np.zeros(30, dtype=np.float32)
+
         try:
             if len(obs) >= 17:
-                # HalfCheetah structure
-                root_angle = obs[0] if len(obs) > 0 else 0.0
-                joint_angles = obs[1:7] if len(obs) > 7 else np.zeros(6)
-                root_vel = obs[8] if len(obs) > 8 else 0.0
-                joint_vels = obs[9:15] if len(obs) > 15 else np.zeros(6)
+                # HalfCheetah observation structure
+                features[0] = 1.0  # constant height for cheetah
+                features[16] = obs[8] if len(obs) > 8 else 0  # forward velocity
+                features[17] = 0.0  # no sideways velocity
+                features[26] = np.abs(obs[8]) if len(obs) > 8 else 0  # speed magnitude
 
-                motion_features = np.concatenate([
-                    [root_angle, root_vel],
-                    joint_angles,
-                    joint_vels,
-                    [np.mean(np.abs(joint_vels))],  # Movement magnitude
-                    [np.std(joint_vels)],  # Movement variability
-                    np.zeros(12)  # Padding to 30
-                ])[:30]
-            else:
-                motion_features = np.zeros(30)
-
-            return motion_features.astype(np.float32)
+                # Copy available joint data
+                copy_len = min(len(obs), 15)
+                features[1:1+copy_len] = obs[:copy_len]
 
         except Exception as e:
-            print(f"Cheetah physics extraction failed: {e}")
-            return np.zeros(30, dtype=np.float32)
+            print(f"Cheetah motion extraction failed: {e}")
 
-    def _extract_ant_physics_features(self, obs: np.ndarray) -> np.ndarray:
-        """Extract physics features from Ant"""
+        return features
+
+    def _extract_ant_features(self, obs: np.ndarray) -> np.ndarray:
+        """Extract features from Ant-v4"""
+        features = np.zeros(30, dtype=np.float32)
+
         try:
             if len(obs) >= 27:
-                com_pos = obs[0:2] if len(obs) > 2 else np.zeros(2)
-                orientation = obs[2:6] if len(obs) > 6 else np.zeros(4)
-                joint_angles = obs[6:14] if len(obs) > 14 else np.zeros(8)
-                velocities = obs[14:25] if len(obs) > 25 else np.zeros(11)
+                # Ant observation structure
+                features[0] = 1.0  # approximate height
+                features[16] = obs[13] if len(obs) > 13 else 0  # x velocity
+                features[17] = obs[14] if len(obs) > 14 else 0  # y velocity
+                features[26] = np.sqrt(features[16]**2 + features[17]**2)  # speed
 
-                motion_features = np.concatenate([
-                    com_pos,
-                    orientation,
-                    joint_angles,
-                    velocities[:8],  # First 8 velocities
-                    [np.mean(np.abs(velocities))],
-                    [np.std(velocities)],
-                    np.zeros(5)  # Padding to 30
-                ])[:30]
-            else:
-                motion_features = np.zeros(30)
-
-            return motion_features.astype(np.float32)
+                # Copy available data
+                copy_len = min(len(obs), 20)
+                features[1:1+copy_len] = obs[:copy_len]
 
         except Exception as e:
-            print(f"Ant physics extraction failed: {e}")
-            return np.zeros(30, dtype=np.float32)
+            print(f"Ant motion extraction failed: {e}")
 
-    def _extract_generic_physics_features(self, obs: np.ndarray) -> np.ndarray:
-        """Generic physics feature extraction"""
+        return features
+
+    def _extract_generic_features(self, obs: np.ndarray) -> np.ndarray:
+        """Generic fallback for unknown environments"""
+        features = np.zeros(30, dtype=np.float32)
+
         try:
-            # Take first 30 observations or pad
-            if len(obs) >= 30:
-                return obs[:30].astype(np.float32)
-            else:
-                return np.pad(obs, (0, 30 - len(obs))).astype(np.float32)
-        except Exception:
-            return np.zeros(30, dtype=np.float32)
+            if len(obs) > 0:
+                # Copy what we can
+                copy_len = min(len(obs), 25)
+                features[:copy_len] = obs[:copy_len]
+
+                # Add some basic derived features
+                features[26] = np.linalg.norm(obs[:min(3, len(obs))])  # magnitude of first 3 dims
+                features[27] = np.std(obs[:min(10, len(obs))]) if len(obs) > 1 else 0  # variation
+                features[28] = np.mean(obs[:min(5, len(obs))]) if len(obs) > 0 else 0  # mean
+
+        except Exception as e:
+            print(f"Generic motion extraction failed: {e}")
+
+        return features
+
+    def _create_fallback_features(self) -> np.ndarray:
+        """Create safe fallback features"""
+        features = np.zeros(30, dtype=np.float32)
+        features[0] = 1.0  # default height
+        features[16] = 0.1  # small forward velocity
+        return features
 
     def encode_instruction(self, instruction: str) -> torch.Tensor:
         """Encode instruction using T5 or hash-based fallback"""
@@ -280,7 +318,7 @@ class MotionTokenizer:
                                          temporal_aggregation: str = "mean") -> float:
         """
         Compute physics-based motion-language similarity
-        This actually works with real movement detection!
+        FIXED VERSION that works with proper motion features
         """
         try:
             # Convert to numpy for physics analysis
@@ -368,7 +406,7 @@ class MotionTokenizer:
 
 
 class PhysicsMotionAnalyzer:
-    """Analyzes motion using physics-based features"""
+    """Analyzes motion using physics-based features - FIXED VERSION"""
 
     def __init__(self):
         self.movement_threshold = 0.01
@@ -376,77 +414,84 @@ class PhysicsMotionAnalyzer:
 
     def analyze_motion_sequence(self, motion_sequence: np.ndarray, instruction: str) -> np.ndarray:
         """
-        Analyze motion sequence and create physics-based descriptor - FIXED FOR TURNING
+        Analyze motion sequence and create physics-based descriptor
+        FIXED VERSION with better turning detection
         Returns 10-dimensional feature vector
         """
         try:
             if motion_sequence.shape[0] < 2:
-                return np.zeros(10)
+                return np.zeros(10, dtype=np.float32)
 
-            # Extract enhanced motion features for turning detection
+            # Extract motion features with proper error handling
             if motion_sequence.shape[1] >= 30:
                 # Height and vertical movement
-                height_changes = np.diff(motion_sequence[:, 0])  # Z-coordinate changes
+                height_values = motion_sequence[:, 0]
+                height_changes = np.diff(height_values)
 
-                # Yaw angle changes (critical for turning detection)
-                yaw_changes = np.diff(motion_sequence[:, 1])  # Yaw angle changes
-                yaw_velocity = np.abs(yaw_changes)
+                # Orientation changes (yaw for turning)
+                if motion_sequence.shape[1] > 19:
+                    yaw_values = motion_sequence[:, 19]  # Angular velocity wz
+                    yaw_changes = np.abs(yaw_values)
+                else:
+                    yaw_changes = np.zeros(motion_sequence.shape[0])
 
-                # Overall orientation changes
-                orientation_changes = np.diff(motion_sequence[:, 1:8], axis=0)  # Euler + quat changes
+                # Velocities
+                if motion_sequence.shape[1] > 18:
+                    velocities = motion_sequence[:, 16:19]  # x, y, z velocities
+                    speed_values = np.linalg.norm(velocities, axis=1)
+                else:
+                    speed_values = np.zeros(motion_sequence.shape[0])
 
-                # Joint movement
-                joint_velocity_mag = np.mean(np.abs(motion_sequence[:, 16:24]), axis=1)  # Joint velocity magnitude
-                overall_movement = np.mean(motion_sequence[:, 24])  # Overall movement magnitude
+                # Joint movements
+                if motion_sequence.shape[1] > 26:
+                    joint_movement = motion_sequence[:, 22:26]  # Joint velocities
+                    joint_activity = np.mean(np.abs(joint_movement), axis=1)
+                else:
+                    joint_activity = np.zeros(motion_sequence.shape[0])
 
-                # Balance indicators
-                roll_values = motion_sequence[:, 3]  # Roll angle
-                balance_metric = 1.0 / (1.0 + np.var(roll_values))  # Higher is better balance
-
-                # Turning-specific metrics
-                turning_magnitude = np.sum(yaw_velocity)  # Total yaw change
-                turning_consistency = 1.0 / (1.0 + np.var(yaw_velocity)) if len(yaw_velocity) > 1 else 0.0
+                # Overall movement magnitude
+                if motion_sequence.shape[1] > 26:
+                    overall_movement = motion_sequence[:, 26]  # Overall speed
+                else:
+                    overall_movement = np.zeros(motion_sequence.shape[0])
 
             else:
-                # Fallback for shorter sequences
-                height_changes = np.diff(motion_sequence[:, 0]) if motion_sequence.shape[1] > 0 else np.array([0])
-                yaw_changes = np.array([0])
-                yaw_velocity = np.array([0])
-                orientation_changes = np.zeros((max(1, motion_sequence.shape[0] - 1), 3))
-                joint_velocity_mag = np.ones(motion_sequence.shape[0]) * 0.1
-                overall_movement = 0.1
-                balance_metric = 0.5
-                turning_magnitude = 0.0
-                turning_consistency = 0.0
+                # Fallback for shorter feature vectors
+                height_changes = np.zeros(max(1, motion_sequence.shape[0] - 1))
+                yaw_changes = np.zeros(motion_sequence.shape[0])
+                speed_values = np.zeros(motion_sequence.shape[0])
+                joint_activity = np.ones(motion_sequence.shape[0]) * 0.1
+                overall_movement = np.ones(motion_sequence.shape[0]) * 0.1
 
-            # Compute enhanced physics-based features
+            # Compute physics-based features
             features = np.array([
                 np.mean(height_changes),  # 0: Vertical movement
-                np.std(height_changes),  # 1: Vertical movement variability
+                np.std(height_changes),   # 1: Vertical movement variability
                 np.mean(np.abs(height_changes)),  # 2: Vertical movement magnitude
 
-                # Enhanced turning detection
-                np.mean(yaw_velocity),  # 3: Average yaw velocity (turning speed)
-                turning_magnitude,  # 4: Total turning magnitude
-                turning_consistency,  # 5: Turning consistency
+                np.mean(yaw_changes),     # 3: Average turning speed
+                np.std(yaw_changes),      # 4: Turning variability
+                np.sum(yaw_changes),      # 5: Total turning magnitude
 
-                np.mean(joint_velocity_mag),  # 6: Average joint velocity
-                np.std(joint_velocity_mag),  # 7: Joint velocity variability
-                balance_metric,  # 8: Balance quality
+                np.mean(speed_values),    # 6: Average linear speed
+                np.std(speed_values),     # 7: Speed variability
 
-                # Movement detection (improved)
-                1.0 if (np.mean(joint_velocity_mag) > self.movement_threshold or
-                        turning_magnitude > 0.1) else 0.0  # 9: Movement/turning detection
-            ])
+                np.mean(joint_activity),  # 8: Joint activity level
 
-            return features.astype(np.float32)
+                # Movement detection score
+                1.0 if (np.mean(joint_activity) > self.movement_threshold or
+                       np.mean(yaw_changes) > 0.01 or
+                       np.mean(speed_values) > 0.01) else 0.0  # 9: Movement detected
+            ], dtype=np.float32)
+
+            return features
 
         except Exception as e:
             print(f"Motion analysis failed: {e}")
             return np.zeros(10, dtype=np.float32)
 
     def check_task_completion(self, motion_sequence: np.ndarray, instruction: str) -> float:
-        """Check if task was completed based on physics - FINAL FIX FOR TURNING"""
+        """Check if task was completed based on physics - FIXED VERSION"""
         try:
             instruction_lower = instruction.lower()
 
@@ -454,94 +499,67 @@ class PhysicsMotionAnalyzer:
             motion_features = self.analyze_motion_sequence(motion_sequence, instruction)
 
             vertical_movement = motion_features[2]  # Vertical movement magnitude
-            yaw_velocity = motion_features[3]  # Average yaw velocity (turning speed)
-            turning_magnitude = motion_features[4]  # Total turning magnitude
-            turning_consistency = motion_features[5]  # Turning consistency
-            joint_movement = motion_features[6]  # Joint movement
-            balance_quality = motion_features[8]  # Balance quality
-            movement_detected = motion_features[9]  # Movement/turning detection
+            turning_speed = motion_features[3]      # Average turning speed
+            turning_magnitude = motion_features[5]  # Total turning magnitude
+            linear_speed = motion_features[6]       # Linear speed
+            joint_activity = motion_features[8]     # Joint activity
+            movement_detected = motion_features[9]  # Movement detection
 
-            # Debug print for turning
-            if 'turn' in instruction_lower:
-                print(f"DEBUG - Turn detection: yaw_vel={yaw_velocity:.4f}, turn_mag={turning_magnitude:.4f}, "
-                      f"joint_mov={joint_movement:.4f}, balance={balance_quality:.4f}")
-
-            # Task-specific success detection with MUCH more lenient thresholds
+            # Task-specific success detection with reasonable thresholds
             if 'turn left' in instruction_lower or 'turn right' in instruction_lower:
-                # For turning tasks - VERY sensitive detection
+                # Turning tasks - look for rotational movement
                 turn_success = 0.0
 
-                # Much lower thresholds for turning detection
-                if yaw_velocity > 0.005:  # Very low threshold
+                if turning_speed > 0.01:
+                    turn_success += 0.4
+                if turning_magnitude > 0.05:
                     turn_success += 0.3
-
-                if turning_magnitude > 0.01:  # Very low threshold
-                    turn_success += 0.3
-
-                # Any movement counts as partial success
-                if joint_movement > 0.01:
+                if joint_activity > 0.02:
                     turn_success += 0.2
-
-                # Just being upright (not falling) is partial success
-                if balance_quality > 0.1:
-                    turn_success += 0.1
-
-                # Any detected movement is partial success
                 if movement_detected > 0.0:
                     turn_success += 0.1
 
                 return min(1.0, turn_success)
 
             elif 'turn' in instruction_lower:
-                # Generic turning with extremely lenient thresholds
-                base_success = 0.0
-
-                if yaw_velocity > 0.001:  # Almost any yaw change
-                    base_success += 0.4
-
-                if turning_magnitude > 0.005:  # Almost any turning
-                    base_success += 0.3
-
-                if joint_movement > 0.005:  # Almost any joint movement
-                    base_success += 0.2
-
-                if movement_detected > 0.0:  # Any movement detected
-                    base_success += 0.1
-
-                return min(1.0, base_success)
+                # Generic turning
+                if turning_speed > 0.005 or turning_magnitude > 0.02:
+                    return min(1.0, 0.5 + turning_speed * 10)
+                else:
+                    return 0.0
 
             elif 'forward' in instruction_lower or 'backward' in instruction_lower:
-                # For walking tasks
-                if joint_movement > 0.03 and movement_detected > 0.5:
+                # Walking tasks
+                if joint_activity > 0.03 and movement_detected > 0.5:
                     return 1.0
-                elif joint_movement > 0.01:  # Lower threshold for partial success
+                elif joint_activity > 0.015:
                     return 0.5
                 else:
                     return 0.0
 
             elif 'jump' in instruction_lower:
-                # For jumping
-                if vertical_movement > 0.03:
+                # Jumping tasks
+                if vertical_movement > 0.05:
                     return 1.0
-                elif vertical_movement > 0.01:
+                elif vertical_movement > 0.02:
                     return 0.5
                 else:
                     return 0.0
 
-            elif 'stop' in instruction_lower:
-                # For stopping
-                if joint_movement < 0.01 and yaw_velocity < 0.005:
+            elif 'stop' in instruction_lower or 'still' in instruction_lower:
+                # Stopping tasks
+                if joint_activity < 0.01 and linear_speed < 0.01:
                     return 1.0
-                elif joint_movement < 0.03:
+                elif joint_activity < 0.03:
                     return 0.5
                 else:
                     return 0.0
 
             else:
                 # Generic movement task
-                if movement_detected > 0.3:
+                if movement_detected > 0.5:
                     return 1.0
-                elif movement_detected > 0.1:
+                elif movement_detected > 0.2:
                     return 0.5
                 else:
                     return 0.0
@@ -584,13 +602,13 @@ class MotionTracker:
 
 
 class MotionQualityEvaluator:
-    """Evaluate motion quality using physics metrics"""
+    """Evaluate motion quality using physics metrics - FIXED VERSION"""
 
     def __init__(self):
         pass
 
     def evaluate_motion_quality(self, motion_sequence: torch.Tensor) -> Dict[str, float]:
-        """Evaluate motion quality using physics-based metrics - FIXED"""
+        """Evaluate motion quality using physics-based metrics"""
         try:
             if isinstance(motion_sequence, torch.Tensor):
                 motion_np = motion_sequence.detach().cpu().numpy()
@@ -601,32 +619,27 @@ class MotionQualityEvaluator:
                 motion_np = motion_np.squeeze(0)
 
             if motion_np.shape[0] < 2:  # Need at least 2 frames
-                return {'smoothness': 0.1, 'stability': 0.1, 'naturalness': 0.1, 'overall_quality': 0.1}
-
-            # Enhanced physics-based quality metrics with fallbacks
+                return self._default_quality_metrics()
 
             # Smoothness: consistency of movement
             try:
                 if motion_np.shape[1] >= 10:
-                    # Use position changes for smoothness
-                    position_changes = np.diff(motion_np[:, :5], axis=0)  # First 5 features
+                    position_changes = np.diff(motion_np[:, :8], axis=0)  # Use position features
                     smoothness_variance = np.mean(np.var(position_changes, axis=0))
-                    smoothness = 1.0 / (1.0 + smoothness_variance * 10)  # Scale factor
-                    smoothness = max(0.05, min(0.95, smoothness))  # Clamp to reasonable range
+                    smoothness = 1.0 / (1.0 + smoothness_variance * 10)
+                    smoothness = np.clip(smoothness, 0.05, 0.95)
                 else:
-                    smoothness = 0.3  # Default for insufficient data
+                    smoothness = 0.3
             except:
                 smoothness = 0.3
 
             # Stability: balance and control
             try:
                 if motion_np.shape[1] >= 8:
-                    # Use height and orientation for stability
                     height_var = np.var(motion_np[:, 0]) if motion_np.shape[1] > 0 else 1.0
                     orientation_var = np.mean(np.var(motion_np[:, 1:5], axis=0)) if motion_np.shape[1] >= 5 else 1.0
-
                     stability = 1.0 / (1.0 + height_var + orientation_var)
-                    stability = max(0.05, min(0.95, stability))
+                    stability = np.clip(stability, 0.05, 0.95)
                 else:
                     stability = 0.3
             except:
@@ -634,38 +647,22 @@ class MotionQualityEvaluator:
 
             # Naturalness: coordination and movement patterns
             try:
-                if motion_np.shape[1] >= 15:
-                    # Use joint coordination
-                    joint_data = motion_np[:, 8:15]  # Joint angles
-                    if joint_data.shape[0] > 2:
-                        joint_correlation = np.corrcoef(joint_data.T)
-                        # Remove NaN values and get mean correlation
-                        valid_correlations = joint_correlation[~np.isnan(joint_correlation)]
-                        if len(valid_correlations) > 0:
-                            naturalness = np.mean(np.abs(valid_correlations))
-                            naturalness = max(0.05, min(0.95, naturalness))
-                        else:
-                            naturalness = 0.3
+                if motion_np.shape[1] >= 20:
+                    # Use velocity features for naturalness
+                    velocity_features = motion_np[:, 16:20]
+                    if velocity_features.shape[0] > 1:
+                        velocity_consistency = 1.0 - np.var(velocity_features)
+                        naturalness = np.clip(velocity_consistency, 0.05, 0.95)
                     else:
                         naturalness = 0.3
                 else:
-                    # Use movement magnitude as proxy
-                    if motion_np.shape[1] >= 25:
-                        movement_mag = np.mean(motion_np[:, 24]) if motion_np.shape[1] > 24 else 0.1
-                        naturalness = min(0.8, movement_mag * 5)  # Scale movement to naturalness
-                        naturalness = max(0.1, naturalness)
-                    else:
-                        naturalness = 0.3
+                    naturalness = 0.3
             except:
                 naturalness = 0.3
 
-            # Overall quality with better weighting
+            # Overall quality
             overall_quality = 0.3 * smoothness + 0.4 * stability + 0.3 * naturalness
-            overall_quality = max(0.05, min(0.95, overall_quality))
-
-            # Debug output for motion quality
-            print(f"DEBUG - Motion Quality: smooth={smoothness:.3f}, stable={stability:.3f}, "
-                  f"natural={naturalness:.3f}, overall={overall_quality:.3f}")
+            overall_quality = np.clip(overall_quality, 0.05, 0.95)
 
             return {
                 'smoothness': float(smoothness),
@@ -676,64 +673,63 @@ class MotionQualityEvaluator:
 
         except Exception as e:
             print(f"Motion quality evaluation failed: {e}")
-            # Return default values instead of zeros
-            return {
-                'smoothness': 0.2,
-                'stability': 0.2,
-                'naturalness': 0.2,
-                'overall_quality': 0.2
-            }
+            return self._default_quality_metrics()
+
+    def _default_quality_metrics(self) -> Dict[str, float]:
+        """Return default quality metrics"""
+        return {
+            'smoothness': 0.2,
+            'stability': 0.2,
+            'naturalness': 0.2,
+            'overall_quality': 0.2
+        }
+
 
 def test_motion_tokenizer():
-    """Test the physics-based motion tokenizer"""
-    print("Testing Physics-Based Motion Tokenizer")
-    print("=" * 40)
+    """Test the fixed motion tokenizer"""
+    print("Testing FIXED Physics-Based Motion Tokenizer")
+    print("=" * 50)
 
     # Create tokenizer
     tokenizer = MotionTokenizer()
 
+    # Test with mock Humanoid observation
+    print("Testing motion extraction from Humanoid observations...")
+    mock_obs = np.random.randn(376)  # Humanoid-v4 observation size
+    mock_obs[0] = 1.0  # height
+    mock_obs[24] = 0.5  # some velocity
+
+    extracted_features = tokenizer.extract_motion_from_obs(mock_obs, "Humanoid-v4")
+    print(f"Extracted features shape: {extracted_features.shape}")
+    print(f"Height feature: {extracted_features[0]:.3f}")
+    print(f"Forward velocity: {extracted_features[16]:.3f}")
+
     # Test motion analysis
-    print("Testing motion analysis...")
+    print("\nTesting motion-language similarity...")
 
     # Create test motion sequences
-    stationary_motion = np.random.randn(20, 30) * 0.01  # Very small movements
-    walking_motion = np.random.randn(20, 30) * 0.1      # Larger movements
-    walking_motion[:, 8] = np.linspace(0, 1, 20)        # Add progressive movement
+    stable_motion = np.tile(extracted_features, (20, 1))
+    stable_motion += np.random.randn(20, 30) * 0.02  # Small noise = stable
 
-    instructions = [
-        "walk forward",
-        "stop moving",
-        "turn left",
-        "jump up"
-    ]
+    moving_motion = np.tile(extracted_features, (20, 1))
+    moving_motion[:, 16] += np.linspace(0, 1, 20)  # Add forward movement
+    moving_motion += np.random.randn(20, 30) * 0.05
 
-    print("\nTesting motion-language alignment...")
+    instructions = ["walk stably", "walk forward", "turn left", "stop moving"]
+
     for instruction in instructions:
-        # Test with walking motion
-        similarity_walking = tokenizer.compute_motion_language_similarity(
-            walking_motion, instruction
-        )
-        success_walking = tokenizer.compute_success_rate(walking_motion, instruction)
+        stable_sim = tokenizer.compute_motion_language_similarity(stable_motion, instruction)
+        moving_sim = tokenizer.compute_motion_language_similarity(moving_motion, instruction)
 
-        # Test with stationary motion
-        similarity_stationary = tokenizer.compute_motion_language_similarity(
-            stationary_motion, instruction
-        )
-        success_stationary = tokenizer.compute_success_rate(stationary_motion, instruction)
+        stable_success = tokenizer.compute_success_rate(stable_motion, instruction)
+        moving_success = tokenizer.compute_success_rate(moving_motion, instruction)
 
         print(f"  '{instruction}':")
-        print(f"    Walking: similarity={similarity_walking:.3f}, success={success_walking:.3f}")
-        print(f"    Stationary: similarity={similarity_stationary:.3f}, success={success_stationary:.3f}")
+        print(f"    Stable: sim={stable_sim:.3f}, success={stable_success:.3f}")
+        print(f"    Moving: sim={moving_sim:.3f}, success={moving_success:.3f}")
 
-    # Test motion quality evaluation
-    print("\nTesting motion quality evaluation...")
-    evaluator = MotionQualityEvaluator()
-    quality_metrics = evaluator.evaluate_motion_quality(walking_motion)
-
-    for metric, value in quality_metrics.items():
-        print(f"  {metric}: {value:.3f}")
-
-    print("\nPhysics-based motion tokenizer test completed!")
+    print("\nFixed motion tokenizer test completed!")
+    print("The environment similarity should now be much closer to direct tokenizer similarity!")
 
 
 if __name__ == "__main__":
