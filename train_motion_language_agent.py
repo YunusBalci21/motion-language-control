@@ -762,10 +762,13 @@ def main():
         instructions = config['instructions']['intermediate']
     elif args.curriculum == 'advanced':
         instructions = config['instructions']['advanced']
+    elif args.curriculum == 'manipulation':  # NEW
+        instructions = config['instructions']['manipulation']
     else:  # 'all'
         instructions = (config['instructions']['basic'] +
                         config['instructions']['intermediate'] +
-                        config['instructions']['advanced'])
+                        config['instructions']['advanced'] +
+                        config['instructions'].get('manipulation', []))
 
     print(f"Selected curriculum: {args.curriculum}")
     print(f"Instructions: {instructions}")
