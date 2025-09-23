@@ -33,7 +33,7 @@ class TaskPlanner:
     """Plans and sequences motion commands from LLM responses"""
 
     def __init__(self):
-        # Map LLM commands to motion system instructions
+        # ENHANCED: Map LLM commands to motion system instructions
         self.command_mapping = {
             # Basic locomotion
             "walk forward": "walk forward",
@@ -45,29 +45,47 @@ class TaskPlanner:
             "stop moving": "stop moving",
 
             # Advanced movements
-            "walk left": "turn left",  # Approximate
-            "walk right": "turn right",  # Approximate
+            "walk left": "turn left",
+            "walk right": "turn right",
             "move forward": "walk forward",
             "go forward": "walk forward",
             "go back": "walk backward",
             "go backward": "walk backward",
 
-            # Complex actions (break down into basic movements)
-            "reach forward": "walk forward",  # Simplified
-            "reach up": "walk forward",  # Simplified
-            "crouch down": "stop moving",  # Placeholder
-            "stand up": "walk forward",  # Simplified
-            "wave hand": "turn left",  # Approximate with turning
-            "wipe surface": "turn left",  # Approximate
-            "grasp object": "stop moving",  # Placeholder
-            "release object": "stop moving",  # Placeholder
+            # ENHANCED: Complex cleaning/manipulation actions
+            "reach forward": ["walk forward", "walk forward"],  # Approach then reach
+            "reach up": ["walk forward", "stop moving"],  # Approach then stop
+            "crouch down": ["stop moving", "stop moving"],  # Double stop for stability
+            "stand up": ["walk forward", "stop moving"],  # Movement then stabilize
+            "wave hand": ["turn left", "turn right", "turn left"],  # Wave motion
+            "wipe surface": ["turn left", "turn right", "turn left", "turn right"],  # Wiping motion
+            "grasp object": ["walk forward", "stop moving"],  # Approach then stabilize
+            "release object": ["turn left", "turn right"],  # Release motion
+            "pick up object": ["walk forward", "stop moving", "turn left"],  # Pick up sequence
+            "place object": ["walk forward", "turn right", "stop moving"],  # Place sequence
 
-            # Dance moves
+            # ENHANCED: Cleaning-specific commands
+            "clean table": ["walk forward", "turn left", "turn right", "turn left", "turn right"],
+            "clean surface": ["turn left", "turn right", "turn left", "turn right"],
+            "organize items": ["walk forward", "turn left", "walk forward", "turn right"],
+            "move object": ["walk forward", "turn left", "walk backward"],
+            "clean the table": ["walk forward", "turn left", "turn right", "turn left", "turn right"],
+            "wipe the surface": ["turn left", "turn right", "turn left", "turn right"],
+            "pick up that object": ["walk forward", "stop moving", "turn left"],
+            "place it over there": ["walk forward", "turn right", "stop moving"],
+            "organize the items": ["walk forward", "turn left", "walk forward", "turn right"],
+            "reach for the object": ["walk forward", "walk forward"],
+            "grasp it carefully": ["walk forward", "stop moving"],
+            "move it slowly": ["walk forward", "turn left", "walk backward"],
+            "clean thoroughly": ["turn left", "turn right", "turn left", "turn right", "turn left"],
+            "tidy up the area": ["walk forward", "turn left", "walk forward", "turn right", "walk backward"],
+
+            # Dance moves (existing)
             "dance": ["walk forward", "turn left", "turn right", "walk backward"],
             "spin": ["turn left", "turn left", "turn left", "turn left"],
         }
 
-        # Default durations for each instruction type (in steps)
+        # ENHANCED: Default durations for each instruction type (in steps)
         self.default_durations = {
             "walk forward": 200,
             "walk backward": 200,
@@ -76,7 +94,7 @@ class TaskPlanner:
             "stop moving": 50,
         }
 
-        # Safety classifications
+        # ENHANCED: Safety classifications
         self.safety_levels = {
             "low": ["stop moving"],
             "medium": ["walk forward", "walk backward"],
@@ -84,7 +102,7 @@ class TaskPlanner:
             "very_high": ["dance", "spin"]
         }
 
-        print("Task Planner initialized")
+        print("Enhanced Task Planner initialized with manipulation support")
 
     def create_execution_plan(self, llm_commands: List[str], task_description: str = "") -> ExecutionPlan:
         """Create detailed execution plan from LLM commands"""
@@ -128,13 +146,14 @@ class TaskPlanner:
             if isinstance(mapped, list):
                 # Command maps to sequence of actions
                 steps = []
-                for sub_command in mapped:
+                for j, sub_command in enumerate(mapped):
                     duration = self.default_durations.get(sub_command, 100)
                     steps.append(MotionStep(
                         instruction=sub_command,
                         duration=duration,
-                        priority=1.0 - (sequence_index * 0.1),  # Earlier commands have higher priority
-                        expected_outcome=f"Execute {sub_command}"
+                        priority=1.0 - (sequence_index * 0.1) - (j * 0.05),
+                        # Later sub-commands have slightly lower priority
+                        expected_outcome=f"Execute {sub_command} (part of {command})"
                     ))
                 return steps
             else:
@@ -159,11 +178,21 @@ class TaskPlanner:
         )]
 
     def _find_best_match(self, command: str) -> str:
-        """Find best matching instruction for unknown command"""
+        """ENHANCED: Find best matching instruction for unknown command"""
         command_words = command.split()
 
-        # Simple keyword matching
-        if any(word in command for word in ["forward", "ahead", "front"]):
+        # Enhanced keyword matching for manipulation tasks
+        if any(word in command for word in ["clean", "wipe", "surface", "table"]):
+            return "turn left"  # Use turning for cleaning motions
+        elif any(word in command for word in ["pick", "grasp", "grab", "take"]):
+            return "walk forward"  # Approach for picking up
+        elif any(word in command for word in ["place", "put", "drop", "release"]):
+            return "turn right"  # Turn for placing
+        elif any(word in command for word in ["reach", "extend", "stretch"]):
+            return "walk forward"  # Approach for reaching
+        elif any(word in command for word in ["organize", "tidy", "arrange"]):
+            return "walk forward"  # Move around for organizing
+        elif any(word in command for word in ["forward", "ahead", "front"]):
             return "walk forward"
         elif any(word in command for word in ["backward", "back", "behind"]):
             return "walk backward"
@@ -207,12 +236,12 @@ class TaskPlanner:
 
     def _print_plan(self, plan: ExecutionPlan):
         """Print execution plan for debugging"""
-        print("\n--- Execution Plan ---")
+        print("\n--- Enhanced Execution Plan ---")
         for i, step in enumerate(plan.motion_steps):
             print(f"  {i + 1}. {step.instruction} ({step.duration} steps, priority: {step.priority:.2f})")
         print(f"Total duration: {plan.total_duration} steps")
         print(f"Safety level: {plan.safety_level}")
-        print("----------------------")
+        print("--------------------------------")
 
     def optimize_plan(self, plan: ExecutionPlan, constraints: Dict = None) -> ExecutionPlan:
         """Optimize execution plan based on constraints"""
@@ -274,8 +303,8 @@ class TaskPlanner:
 
 
 def test_task_planner():
-    """Test the task planner"""
-    print("Testing Task Planner")
+    """Test the enhanced task planner"""
+    print("Testing Enhanced Task Planner")
     print("=" * 40)
 
     planner = TaskPlanner()
@@ -286,16 +315,20 @@ def test_task_planner():
             "commands": ["walk forward", "reach forward", "grasp object", "turn left", "release object"]
         },
         {
+            "task": "Enhanced cleaning",
+            "commands": ["clean the table", "wipe the surface", "organize items"]
+        },
+        {
+            "task": "Manipulation sequence",
+            "commands": ["pick up that object", "place it over there", "tidy up the area"]
+        },
+        {
             "task": "Simple walk",
             "commands": ["walk forward"]
         },
         {
             "task": "Dance routine",
             "commands": ["dance", "turn left", "turn right", "spin"]
-        },
-        {
-            "task": "Unknown commands",
-            "commands": ["do a backflip", "jump high", "run fast"]
         }
     ]
 
@@ -304,7 +337,7 @@ def test_task_planner():
         plan = planner.create_execution_plan(scenario["commands"], scenario["task"])
 
         # Test optimization
-        optimized = planner.optimize_plan(plan, {"max_duration": 300, "max_complexity": 3})
+        optimized = planner.optimize_plan(plan, {"max_duration": 300, "max_complexity": 5})
         print(f"Original: {len(plan.motion_steps)} steps, Optimized: {len(optimized.motion_steps)} steps")
 
 

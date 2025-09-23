@@ -406,16 +406,16 @@ class MotionTokenizer:
 
 
 class PhysicsMotionAnalyzer:
-    """Analyzes motion using physics-based features - FIXED VERSION"""
+    """ENHANCED: Analyzes motion using physics-based features with stability focus"""
 
     def __init__(self):
         self.movement_threshold = 0.01
         self.orientation_threshold = 0.1
+        self.stability_threshold = 0.2  # NEW: For stability checking
 
     def analyze_motion_sequence(self, motion_sequence: np.ndarray, instruction: str) -> np.ndarray:
         """
-        Analyze motion sequence and create physics-based descriptor
-        FIXED VERSION with better turning detection
+        ENHANCED: Analyze motion sequence and create physics-based descriptor with stability focus
         Returns 10-dimensional feature vector
         """
         try:
@@ -424,30 +424,37 @@ class PhysicsMotionAnalyzer:
 
             # Extract motion features with proper error handling
             if motion_sequence.shape[1] >= 30:
-                # Height and vertical movement
+                # Height and vertical movement (ENHANCED stability tracking)
                 height_values = motion_sequence[:, 0]
                 height_changes = np.diff(height_values)
+                height_stability = 1.0 / (1.0 + np.var(height_values))  # NEW: Height consistency
 
-                # Orientation changes (yaw for turning)
+                # Orientation changes (yaw for turning) - ENHANCED
                 if motion_sequence.shape[1] > 19:
                     yaw_values = motion_sequence[:, 19]  # Angular velocity wz
                     yaw_changes = np.abs(yaw_values)
+                    yaw_consistency = 1.0 / (1.0 + np.var(yaw_values))  # NEW: Turning consistency
                 else:
                     yaw_changes = np.zeros(motion_sequence.shape[0])
+                    yaw_consistency = 1.0
 
-                # Velocities
+                # Velocities with stability analysis
                 if motion_sequence.shape[1] > 18:
                     velocities = motion_sequence[:, 16:19]  # x, y, z velocities
                     speed_values = np.linalg.norm(velocities, axis=1)
+                    speed_stability = 1.0 / (1.0 + np.var(speed_values))  # NEW: Speed consistency
                 else:
                     speed_values = np.zeros(motion_sequence.shape[0])
+                    speed_stability = 1.0
 
-                # Joint movements
+                # Joint movements with coordination analysis
                 if motion_sequence.shape[1] > 26:
                     joint_movement = motion_sequence[:, 22:26]  # Joint velocities
                     joint_activity = np.mean(np.abs(joint_movement), axis=1)
+                    joint_coordination = 1.0 - np.var(joint_activity)  # NEW: Joint coordination
                 else:
                     joint_activity = np.zeros(motion_sequence.shape[0])
+                    joint_coordination = 1.0
 
                 # Overall movement magnitude
                 if motion_sequence.shape[1] > 26:
@@ -458,30 +465,35 @@ class PhysicsMotionAnalyzer:
             else:
                 # Fallback for shorter feature vectors
                 height_changes = np.zeros(max(1, motion_sequence.shape[0] - 1))
+                height_stability = 0.5
                 yaw_changes = np.zeros(motion_sequence.shape[0])
+                yaw_consistency = 1.0
                 speed_values = np.zeros(motion_sequence.shape[0])
+                speed_stability = 1.0
                 joint_activity = np.ones(motion_sequence.shape[0]) * 0.1
+                joint_coordination = 1.0
                 overall_movement = np.ones(motion_sequence.shape[0]) * 0.1
 
-            # Compute physics-based features
+            # ENHANCED: Compute physics-based features with stability focus
             features = np.array([
                 np.mean(height_changes),  # 0: Vertical movement
-                np.std(height_changes),   # 1: Vertical movement variability
+                np.std(height_changes),  # 1: Vertical movement variability
                 np.mean(np.abs(height_changes)),  # 2: Vertical movement magnitude
 
-                np.mean(yaw_changes),     # 3: Average turning speed
-                np.std(yaw_changes),      # 4: Turning variability
-                np.sum(yaw_changes),      # 5: Total turning magnitude
+                np.mean(yaw_changes),  # 3: Average turning speed
+                np.std(yaw_changes),  # 4: Turning variability
+                np.sum(yaw_changes),  # 5: Total turning magnitude
 
-                np.mean(speed_values),    # 6: Average linear speed
-                np.std(speed_values),     # 7: Speed variability
+                np.mean(speed_values),  # 6: Average linear speed
+                np.std(speed_values),  # 7: Speed variability
 
                 np.mean(joint_activity),  # 8: Joint activity level
 
-                # Movement detection score
-                1.0 if (np.mean(joint_activity) > self.movement_threshold or
-                       np.mean(yaw_changes) > 0.01 or
-                       np.mean(speed_values) > 0.01) else 0.0  # 9: Movement detected
+                # ENHANCED: Movement detection with stability consideration
+                1.0 if (np.mean(joint_activity) > self.movement_threshold and
+                        height_stability > 0.3 and  # NEW: Must maintain reasonable stability
+                        (np.mean(yaw_changes) > 0.01 or np.mean(speed_values) > 0.01)) else 0.0
+                # 9: Stable movement detected
             ], dtype=np.float32)
 
             return features
@@ -491,7 +503,7 @@ class PhysicsMotionAnalyzer:
             return np.zeros(10, dtype=np.float32)
 
     def check_task_completion(self, motion_sequence: np.ndarray, instruction: str) -> float:
-        """Check if task was completed based on physics - FIXED VERSION"""
+        """ENHANCED: Check if task was completed based on physics with stability focus"""
         try:
             instruction_lower = instruction.lower()
 
@@ -499,15 +511,15 @@ class PhysicsMotionAnalyzer:
             motion_features = self.analyze_motion_sequence(motion_sequence, instruction)
 
             vertical_movement = motion_features[2]  # Vertical movement magnitude
-            turning_speed = motion_features[3]      # Average turning speed
+            turning_speed = motion_features[3]  # Average turning speed
             turning_magnitude = motion_features[5]  # Total turning magnitude
-            linear_speed = motion_features[6]       # Linear speed
-            joint_activity = motion_features[8]     # Joint activity
+            linear_speed = motion_features[6]  # Linear speed
+            joint_activity = motion_features[8]  # Joint activity
             movement_detected = motion_features[9]  # Movement detection
 
-            # Task-specific success detection with reasonable thresholds
+            # ENHANCED: Task-specific success detection with stability consideration
             if 'turn left' in instruction_lower or 'turn right' in instruction_lower:
-                # Turning tasks - look for rotational movement
+                # Turning tasks - look for rotational movement with stability
                 turn_success = 0.0
 
                 if turning_speed > 0.01:
@@ -516,26 +528,46 @@ class PhysicsMotionAnalyzer:
                     turn_success += 0.3
                 if joint_activity > 0.02:
                     turn_success += 0.2
-                if movement_detected > 0.0:
+                if movement_detected > 0.0:  # Already includes stability check
                     turn_success += 0.1
 
                 return min(1.0, turn_success)
 
             elif 'turn' in instruction_lower:
-                # Generic turning
+                # Generic turning with stability
                 if turning_speed > 0.005 or turning_magnitude > 0.02:
-                    return min(1.0, 0.5 + turning_speed * 10)
+                    stability_bonus = 0.2 if movement_detected > 0.0 else 0.0  # Stable turning bonus
+                    return min(1.0, 0.5 + turning_speed * 10 + stability_bonus)
                 else:
                     return 0.0
 
             elif 'forward' in instruction_lower or 'backward' in instruction_lower:
-                # Walking tasks
-                if joint_activity > 0.03 and movement_detected > 0.5:
-                    return 1.0
-                elif joint_activity > 0.015:
-                    return 0.5
-                else:
-                    return 0.0
+                # ENHANCED: Walking tasks with stability requirements
+                walking_success = 0.0
+
+                # Check for actual movement
+                if movement_detected > 0.5:
+                    walking_success += 0.3
+
+                # Check for joint activity (walking motion)
+                if joint_activity > 0.03:
+                    walking_success += 0.3
+
+                # ENHANCED: STABILITY BONUS - check height consistency
+                if motion_sequence.shape[1] > 0:
+                    height_values = motion_sequence[:, 0]
+                    height_std = np.std(height_values)
+                    if height_std < self.stability_threshold:  # Stable height = not falling
+                        walking_success += 0.3
+                    elif height_std < 0.4:
+                        walking_success += 0.1
+
+                # ENHANCED: FORWARD PROGRESS BONUS
+                if 'forward' in instruction_lower:
+                    if linear_speed > 0.05:  # Actually moving forward
+                        walking_success += 0.1
+
+                return min(1.0, walking_success)
 
             elif 'jump' in instruction_lower:
                 # Jumping tasks
@@ -555,8 +587,23 @@ class PhysicsMotionAnalyzer:
                 else:
                     return 0.0
 
+            # ENHANCED: Manipulation task success detection
+            elif any(word in instruction_lower for word in
+                     ['clean', 'wipe', 'organize', 'pick', 'place', 'grasp', 'reach']):
+                # Manipulation tasks - combination of movement and stability
+                manipulation_success = 0.0
+
+                if joint_activity > 0.02:  # Some movement required
+                    manipulation_success += 0.4
+                if movement_detected > 0.3:  # Stable movement
+                    manipulation_success += 0.3
+                if turning_magnitude > 0.02 or linear_speed > 0.02:  # Task-appropriate motion
+                    manipulation_success += 0.3
+
+                return min(1.0, manipulation_success)
+
             else:
-                # Generic movement task
+                # Generic movement task with stability
                 if movement_detected > 0.5:
                     return 1.0
                 elif movement_detected > 0.2:

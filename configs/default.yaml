@@ -4,7 +4,7 @@
 experiment:
   name: "direct_motion_language_learning"
   description: "Enhanced motion-language control using direct MotionGPT integration"
-  version: "2.0"
+  version: "3.0"
   authors: ["Yunus Emre Balci"]
   institution: "SDU"
 
@@ -17,8 +17,8 @@ environment:
 
 # Enhanced Training Configuration
 training:
-  # Timesteps per instruction (adjust based on complexity)
-  total_timesteps_per_instruction: 100000
+  # ENHANCED: Increased timesteps per instruction for stability
+  total_timesteps_per_instruction: 150000
 
   # Language reward weights for curriculum learning
   # Progressive increase in language supervision
@@ -44,7 +44,7 @@ training:
   vf_coef: 0.5
   max_grad_norm: 0.5
 
-# Instruction Curricula
+# ENHANCED: Instruction Curricula with Manipulation Support
 instructions:
   # Basic locomotion instructions
   basic:
@@ -91,6 +91,28 @@ instructions:
     - "move forward with smooth motions"
     - "walk forward and keep your head up"
 
+  # ENHANCED: Manipulation and cleaning focused
+  manipulation:
+    - "clean the table"
+    - "wipe the surface"
+    - "pick up that object"
+    - "place it over there"
+    - "organize the items"
+    - "reach for the object"
+    - "grasp it carefully"
+    - "move it slowly"
+    - "clean thoroughly"
+    - "tidy up the area"
+    - "reach forward carefully"
+    - "pick up object slowly"
+    - "clean the surface smoothly"
+    - "organize items carefully"
+    - "move object gently"
+    - "wipe table thoroughly"
+    - "grasp object securely"
+    - "place object down carefully"
+
+  # Stability focused (existing)
   stability_focused:
     - "walk stably without falling"
     - "maintain balance while moving"
@@ -112,6 +134,9 @@ instructions:
     - "walk in a figure eight pattern"
     - "crouch walk forward"
     - "walk forward then jump then continue walking"
+    - "clean the table then organize items"
+    - "pick up object then place it carefully"
+    - "reach forward then wipe surface thoroughly"
 
 # Enhanced Evaluation Configuration
 evaluation:
@@ -123,7 +148,7 @@ evaluation:
   # Analysis settings
   compute_similarity_metrics: true
   track_computation_times: true
-  save_episode_videos: false  # Set to true if you want videos
+  save_episode_videos: true  # ENHANCED: Set to true for video analysis
 
   # Success thresholds
   similarity_threshold_good: 0.6
@@ -183,9 +208,10 @@ logging:
 
 # Experimental Features
 experimental:
-  # Advanced reward shaping
+  # ENHANCED: Advanced reward shaping for stability
   use_progress_bonus: true
   use_instruction_specific_rewards: true
+  stability_bonus_weight: 0.3  # NEW: Weight for stability bonuses
 
   # Motion augmentation
   use_motion_augmentation: false
