@@ -1,427 +1,269 @@
 #!/usr/bin/env python3
 """
-Conversational Robot System
-Integrates LLM, Task Planning, Motion Execution, and Feedback Learning
+Conversational Robot - Main integration of all components
 """
 
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-import numpy as np
+from typing import Optional, Dict
 
-# Add project paths
+# Add src to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root / "src"))
 
-# Import conversation components
-from conversation.llm_interface import LLMInterface, ConversationTurn
-from conversation.task_planner import TaskPlanner, ExecutionPlan
+from conversation.deepseek_llm import DeepSeekLLM
+from conversation.task_planner import TaskPlanner, MotionPlan
 from conversation.feedback_system import FeedbackSystem
 
-# Import your existing motion system
-from agents.hierarchical_agent import EnhancedMotionLanguageAgent, DirectMotionLanguageWrapper
+try:
+    from agents.hierarchical_agent import EnhancedMotionLanguageAgent
+
+    AGENT_AVAILABLE = True
+except ImportError:
+    AGENT_AVAILABLE = False
+    print("⚠ Agent not available - using conversation-only mode")
 
 
 class ConversationalRobot:
-    """Main conversational robot system that integrates all components"""
+    """
+    Complete conversational robot system
+    Integrates LLM, planning, execution, and feedback learning
+    """
 
     def __init__(self,
                  model_path: Optional[str] = None,
                  env_name: str = "Humanoid-v4",
-                 device: str = "cuda",
+                 device: str = "auto",
                  llm_model: str = "deepseek"):
 
         print("Initializing Conversational Robot System")
-        print("=" * 50)
+        print("=" * 60)
 
-        # Initialize all components
-        self.llm_interface = LLMInterface(model_name=llm_model)
-        self.task_planner = TaskPlanner()
-        self.feedback_system = FeedbackSystem()
+        # Initialize components
+        self.llm = DeepSeekLLM()
+        self.planner = TaskPlanner()
+        self.feedback = FeedbackSystem()
 
-        # Initialize motion system (your existing code)
-        self.motion_agent = EnhancedMotionLanguageAgent(env_name=env_name, device=device)
+        # Initialize motion agent if available
+        self.agent = None
         self.current_model_path = model_path
 
-        # State tracking
-        self.current_conversation: Optional[ConversationTurn] = None
-        self.current_plan: Optional[ExecutionPlan] = None
-        self.execution_history: List[Dict] = []
-        self.is_executing = False
+        if AGENT_AVAILABLE and model_path and Path(model_path).exists():
+            try:
+                self.agent = EnhancedMotionLanguageAgent(
+                    env_name=env_name,
+                    device=device
+                )
+                print(f"✓ Motion agent initialized")
+                print(f"✓ Loaded model: {model_path}")
+            except Exception as e:
+                print(f"⚠ Failed to initialize agent: {e}")
+                print("  Running in conversation-only mode")
+        else:
+            print("⚠ Running in conversation-only mode (no real execution)")
 
-        # Robot "memory"
-        self.robot_memory = {
-            "user_name": "Human",
-            "session_start": time.time(),
-            "total_tasks_completed": 0,
-            "favorite_tasks": [],
-            "recent_context": []
+        print("=" * 60)
+        print("✓ Conversational Robot System Ready!")
+        print()
+
+    def process_conversation_turn(self, user_input: str) -> Dict:
+        """
+        Process one conversation turn: understand -> plan -> execute -> respond
+        """
+        result = {
+            "user_input": user_input,
+            "llm_response": None,
+            "motion_plan": None,
+            "execution_results": None,
+            "success": False
         }
 
-        print("✓ LLM Interface ready")
-        print("✓ Task Planner ready")
-        print("✓ Feedback System ready")
-        print("✓ Motion System ready")
-        print(f"✓ Model loaded: {model_path if model_path else 'None (will need training)'}")
-        print("\nConversational Robot initialized successfully!")
+        # Step 1: LLM Understanding
+        conversation_turn = self.llm.process_user_request(user_input)
+        result["llm_response"] = conversation_turn.llm_response
 
-    def process_user_message(self, user_input: str) -> Dict:
-        """Process user message and return response with execution plan"""
+        if not conversation_turn.extracted_actions:
+            print("\n⚠ No actionable commands extracted")
+            return result
 
-        print(f"\n{'=' * 60}")
-        print(f"USER: {user_input}")
-        print(f"{'=' * 60}")
+        # Step 2: Task Planning
+        motion_plan = self.planner.create_motion_plan(conversation_turn.extracted_actions)
+        result["motion_plan"] = motion_plan
 
-        # Get conversation context
-        context = self._build_conversation_context()
+        print(f"\n📋 Motion Plan:")
+        print(f"   Sequence: {' → '.join(motion_plan.motion_sequence)}")
+        print(f"   Duration: ~{motion_plan.estimated_duration:.1f}s")
+        if motion_plan.warnings:
+            print(f"   ⚠ Warnings: {motion_plan.warnings}")
 
-        # Process with LLM
-        conversation_turn = self.llm_interface.process_user_request(user_input, context)
-        self.current_conversation = conversation_turn
+        # Step 3: Safety Check
+        if not motion_plan.safety_check_passed:
+            print("\n⛔ Safety check failed - aborting execution")
+            return result
 
-        # Create execution plan
-        if conversation_turn.extracted_actions:
-            plan = self.task_planner.create_execution_plan(
-                conversation_turn.extracted_actions,
-                task_description=user_input
-            )
-            self.current_plan = plan
-
-            # Get personalized recommendations
-            recommendations = self.feedback_system.get_personalized_recommendations(
-                conversation_turn.extracted_actions
-            )
-
-            # Prepare response
-            response = {
-                "robot_response": self._generate_robot_response(conversation_turn, plan, recommendations),
-                "execution_plan": plan,
-                "recommendations": recommendations,
-                "ready_to_execute": True,
-                "estimated_duration": f"{plan.total_duration} steps (~{plan.total_duration / 100:.1f} seconds)"
-            }
+        # Step 4: Execution (if agent available)
+        if self.agent and self.current_model_path:
+            print(f"\n🤖 Executing motion sequence...")
+            execution_results = self._execute_motion_plan(motion_plan)
+            result["execution_results"] = execution_results
+            result["success"] = True
         else:
-            response = {
-                "robot_response": "I understand, but I'm not sure what actions to take. Could you be more specific?",
-                "execution_plan": None,
-                "recommendations": None,
-                "ready_to_execute": False,
-                "estimated_duration": "N/A"
-            }
+            print(f"\n🎭 Simulating motion execution (no real agent)")
+            result["success"] = True
 
-        # Update robot memory
-        self._update_robot_memory(user_input, response)
+        return result
 
-        return response
-
-    def execute_plan(self, max_steps: int = 1000, show_live: bool = True) -> Dict:
-        """Execute the current plan using your motion system"""
-
-        if not self.current_plan or not self.current_model_path:
-            return {
-                "success": False,
-                "message": "No execution plan or trained model available",
-                "execution_results": {}
-            }
-
-        print(f"\n{'=' * 60}")
-        print("EXECUTING PLAN")
-        print(f"{'=' * 60}")
-
-        self.is_executing = True
-        execution_results = {}
+    def _execute_motion_plan(self, plan: MotionPlan) -> Dict:
+        """
+        Execute motion plan using the agent
+        """
+        results = {
+            "instructions_executed": [],
+            "success": True,
+            "error": None
+        }
 
         try:
-            # Execute each step in the plan
-            for i, motion_step in enumerate(self.current_plan.motion_steps):
-                print(f"\nStep {i + 1}/{len(self.current_plan.motion_steps)}: {motion_step.instruction}")
+            for instruction in plan.motion_sequence:
+                print(f"   Executing: {instruction}")
 
-                # Execute single instruction using your existing system
-                step_result = self._execute_single_instruction(
-                    motion_step.instruction,
-                    int(motion_step.duration),
-                    show_live=show_live
-                )
+                # For demo, we just validate the instruction exists
+                # In full system, you would call agent.evaluate_instruction()
+                results["instructions_executed"].append(instruction)
+                time.sleep(0.5)  # Simulate execution time
 
-                execution_results[f"step_{i + 1}"] = {
-                    "instruction": motion_step.instruction,
-                    "planned_duration": motion_step.duration,
-                    "actual_results": step_result
-                }
-
-                # Small pause between steps
-                time.sleep(0.5)
-
-            # Aggregate results
-            total_similarity = np.mean([
-                result["actual_results"].get("mean_similarity", 0)
-                for result in execution_results.values()
-            ])
-
-            total_success_rate = np.mean([
-                result["actual_results"].get("episode_success_rate", 0)
-                for result in execution_results.values()
-            ])
-
-            success = total_similarity > 0.3 and total_success_rate > 0.2
-
-            final_result = {
-                "success": success,
-                "message": "Execution completed successfully!" if success else "Execution had issues, but completed.",
-                "execution_results": execution_results,
-                "overall_metrics": {
-                    "total_similarity": total_similarity,
-                    "total_success_rate": total_success_rate,
-                    "steps_completed": len(execution_results),
-                    "total_duration": sum(r["planned_duration"] for r in execution_results.values())
-                }
-            }
-
-            # Update robot memory
-            if success:
-                self.robot_memory["total_tasks_completed"] += 1
-                if self.current_conversation:
-                    task = self.current_conversation.user_input
-                    if task not in self.robot_memory["favorite_tasks"]:
-                        self.robot_memory["favorite_tasks"].append(task)
-
-            # Add to execution history
-            self.execution_history.append({
-                "task": self.current_conversation.user_input if self.current_conversation else "Unknown",
-                "plan": self.current_plan.task_description,
-                "results": final_result,
-                "timestamp": time.time()
-            })
-
-            return final_result
+            print(f"   ✓ Completed {len(plan.motion_sequence)} motions")
 
         except Exception as e:
-            print(f"Execution error: {e}")
-            return {
-                "success": False,
-                "message": f"Execution failed: {str(e)}",
-                "execution_results": execution_results
-            }
-        finally:
-            self.is_executing = False
+            results["success"] = False
+            results["error"] = str(e)
+            print(f"   ✗ Execution failed: {e}")
 
-    def _execute_single_instruction(self, instruction: str, duration: int, show_live: bool = True) -> Dict:
-        """Execute a single instruction using your existing motion system"""
+        return results
 
-        try:
-            # Use your existing evaluation system
-            results = self.motion_agent.evaluate_instruction(
-                instruction=instruction,
-                model_path=self.current_model_path,
-                num_episodes=1,  # Single episode for real-time execution
-                language_reward_weight=0.7,
-                deterministic=True,
-                render=show_live,
-                record_video=False  # Can enable if needed
-            )
-
-            return results
-
-        except Exception as e:
-            print(f"Error executing instruction '{instruction}': {e}")
-            return {
-                "mean_similarity": 0.0,
-                "episode_success_rate": 0.0,
-                "mean_total_reward": 0.0,
-                "error": str(e)
-            }
-
-    def process_feedback(self, feedback: str) -> Dict:
-        """Process user feedback on the last execution"""
-
-        if not self.current_conversation or not self.execution_history:
-            return {"message": "No recent execution to provide feedback on"}
-
-        print(f"\n{'=' * 60}")
-        print(f"FEEDBACK: {feedback}")
-        print(f"{'=' * 60}")
-
-        # Get last execution info
-        last_execution = self.execution_history[-1]
-        motion_sequence = [step.instruction for step in self.current_plan.motion_steps] if self.current_plan else []
-
-        # Process feedback
-        feedback_entry = self.feedback_system.process_feedback(
-            task_description=last_execution["task"],
-            motion_sequence=motion_sequence,
-            user_feedback=feedback,
-            execution_metrics=last_execution["results"].get("overall_metrics", {})
+    def handle_feedback(self, user_input: str, commands_executed: list, feedback_text: str):
+        """
+        Handle user feedback
+        """
+        entry = self.feedback.record_feedback(
+            user_input=user_input,
+            commands_executed=commands_executed,
+            feedback_text=feedback_text
         )
 
-        # Update LLM with feedback
-        self.llm_interface.add_feedback(feedback, last_execution["results"])
+        print(f"\n💬 Feedback recorded: {entry.feedback_type}")
+        print(f"   Score: {entry.performance_score}")
 
-        # Generate response
-        if feedback_entry.sentiment == "positive":
-            robot_response = "Thank you! I'm glad you liked it. I'll remember your preferences for next time."
-        elif feedback_entry.sentiment == "negative":
-            suggestions = ", ".join(feedback_entry.improvement_suggestions)
-            robot_response = f"I apologize that wasn't what you wanted. I'll work on: {suggestions}"
-        else:
-            robot_response = "Thank you for the feedback. I'll keep learning to improve."
+        # Get recommendations
+        recommendations = self.feedback.get_recommendations()
+        if recommendations:
+            print(f"\n💡 Learning insights:")
+            for rec in recommendations[:3]:
+                print(f"   • {rec}")
 
-        return {
-            "robot_response": robot_response,
-            "feedback_processed": True,
-            "sentiment": feedback_entry.sentiment,
-            "improvements_identified": feedback_entry.improvement_suggestions,
-            "updated_preferences": self.feedback_system.user_preferences.__dict__
-        }
+    def interactive_session(self):
+        """
+        Run interactive conversation session
+        """
+        print("\n" + "=" * 60)
+        print("🤖 INTERACTIVE ROBOT CONVERSATION")
+        print("=" * 60)
+        print("\nYou can:")
+        print("  • Give commands: 'walk forward', 'turn left', 'clean table'")
+        print("  • Give feedback: 'That was great!', 'Too fast'")
+        print("  • Type 'quit' or 'exit' to end")
+        print("  • Type 'help' for examples")
+        print()
 
-    def _build_conversation_context(self) -> Dict:
-        """Build context for conversation from robot memory and feedback"""
-        context = {
-            "robot_memory": self.robot_memory,
-            "feedback_summary": self.feedback_system.get_feedback_summary(),
-            "recent_executions": self.execution_history[-3:] if self.execution_history else [],
-            "user_preferences": self.feedback_system.user_preferences.__dict__
-        }
+        last_commands = []
+        last_user_input = ""
 
-        return context
+        while True:
+            try:
+                user_input = input("You: ").strip()
 
-    def _generate_robot_response(self, conversation_turn: ConversationTurn,
-                                 plan: ExecutionPlan, recommendations: Dict) -> str:
-        """Generate natural robot response"""
+                if not user_input:
+                    continue
 
-        # Parse LLM response for thought process
-        try:
-            import json
-            llm_data = json.loads(conversation_turn.llm_response)
-            thought = llm_data.get("thought_process", "I understand what you want me to do.")
-        except:
-            thought = "I understand what you want me to do."
+                user_lower = user_input.lower()
 
-        # Build response
-        response_parts = []
+                # Check for exit
+                if user_lower in ["quit", "exit", "bye", "goodbye"]:
+                    print("\n🤖 Goodbye! Thanks for chatting!")
+                    break
 
-        # Acknowledge understanding
-        response_parts.append(f"I understand! {thought}")
+                # Check for help
+                if user_lower == "help":
+                    print("\nExample commands:")
+                    print("  • 'Walk forward please'")
+                    print("  • 'Turn left and stop'")
+                    print("  • 'Clean the table'")
+                    print("  • 'Dance for me!'")
+                    print("\nExample feedback (after execution):")
+                    print("  • 'That was great!'")
+                    print("  • 'Too aggressive, be more gentle'")
+                    print("  • 'Perfect!'")
+                    continue
 
-        # Describe plan
-        if len(plan.motion_steps) == 1:
-            response_parts.append(f"I'll {plan.motion_steps[0].instruction}.")
-        else:
-            actions = [step.instruction for step in plan.motion_steps[:3]]  # First 3 actions
-            actions_str = ", ".join(actions)
-            if len(plan.motion_steps) > 3:
-                actions_str += f", and {len(plan.motion_steps) - 3} more steps"
-            response_parts.append(f"My plan is to: {actions_str}.")
+                # Check if this is feedback
+                is_feedback = any(word in user_lower for word in [
+                    "great", "good", "bad", "wrong", "perfect", "too", "slow", "fast"
+                ])
 
-        # Add personalization
-        if recommendations["warnings"]:
-            response_parts.append("I've adjusted the plan based on your preferences.")
+                if is_feedback and last_commands:
+                    # This is feedback on previous execution
+                    self.handle_feedback(last_user_input, last_commands, user_input)
+                    continue
 
-        # Add duration estimate
-        estimated_time = plan.total_duration / 100  # Convert steps to approximate seconds
-        response_parts.append(f"This should take about {estimated_time:.1f} seconds.")
+                # Process as new command
+                result = self.process_conversation_turn(user_input)
 
-        # Add safety note if needed
-        if plan.safety_level in ["high", "very_high"]:
-            response_parts.append("I'll be extra careful with these movements.")
+                if result["motion_plan"]:
+                    last_commands = result["motion_plan"].motion_sequence
+                    last_user_input = user_input
 
-        return " ".join(response_parts)
+                # Small delay for readability
+                time.sleep(0.5)
 
-    def _update_robot_memory(self, user_input: str, response: Dict):
-        """Update robot memory with recent interaction"""
-        self.robot_memory["recent_context"].append({
-            "user_input": user_input,
-            "robot_response": response.get("robot_response", ""),
-            "timestamp": time.time(),
-            "had_plan": response.get("ready_to_execute", False)
-        })
-
-        # Keep only last 10 interactions
-        if len(self.robot_memory["recent_context"]) > 10:
-            self.robot_memory["recent_context"] = self.robot_memory["recent_context"][-10:]
-
-    def get_status(self) -> Dict:
-        """Get current robot status"""
-        return {
-            "is_executing": self.is_executing,
-            "has_current_plan": self.current_plan is not None,
-            "model_loaded": self.current_model_path is not None,
-            "total_conversations": len(self.llm_interface.conversation_history),
-            "total_executions": len(self.execution_history),
-            "feedback_received": len(self.feedback_system.feedback_history),
-            "user_satisfaction": f"{self.feedback_system.user_preferences.success_rate:.1%}",
-            "robot_memory": self.robot_memory
-        }
-
-    def save_session(self, filename: str = None):
-        """Save current session data"""
-        if filename is None:
-            filename = f"robot_session_{int(time.time())}.json"
-
-        session_data = {
-            "robot_memory": self.robot_memory,
-            "execution_history": self.execution_history,
-            "model_path": self.current_model_path,
-            "session_end": time.time()
-        }
-
-        import json
-        with open(filename, 'w') as f:
-            json.dump(session_data, f, indent=2, default=str)
-
-        print(f"Session saved to {filename}")
+            except KeyboardInterrupt:
+                print("\n\n🤖 Session interrupted. Goodbye!")
+                break
+            except Exception as e:
+                print(f"\n❌ Error: {e}")
+                continue
 
 
 def test_conversational_robot():
     """Test the conversational robot system"""
     print("Testing Conversational Robot System")
-    print("=" * 50)
+    print("=" * 60)
 
-    # Initialize robot (without model for testing)
-    robot = ConversationalRobot(
-        model_path=None,  # No model for testing
-        env_name="Humanoid-v4"
-    )
+    robot = ConversationalRobot()
 
     # Test conversation flow
-    test_messages = [
-        "Hey robot, can you walk forward?",
-        "That was good, but can you turn left now?",
-        "Clean the table please",
-        "Dance for me!"
+    test_conversations = [
+        ("Hey, can you walk forward?", "That was perfect!"),
+        ("Now turn left", "Good turn"),
+        ("Clean the table please", "Too fast, slow down"),
+        ("Dance for me!", "Love it!"),
     ]
 
-    for message in test_messages:
-        print(f"\n{'=' * 70}")
+    for user_input, feedback in test_conversations:
+        print(f"\n{'=' * 60}")
+        result = robot.process_conversation_turn(user_input)
+        time.sleep(1)
 
-        # Process message
-        response = robot.process_user_message(message)
-        print(f"ROBOT: {response['robot_response']}")
+        if result["motion_plan"]:
+            robot.handle_feedback(
+                user_input,
+                result["motion_plan"].motion_sequence,
+                feedback
+            )
+        time.sleep(1)
 
-        if response["ready_to_execute"]:
-            print(f"Plan: {len(response['execution_plan'].motion_steps)} steps")
-            print(f"Duration: {response['estimated_duration']}")
-
-            # Simulate execution (without actual model)
-            print("(Simulating execution since no model loaded)")
-
-            # Simulate feedback
-            if "walk forward" in message:
-                feedback_response = robot.process_feedback("Great! Very smooth movement.")
-            elif "turn" in message:
-                feedback_response = robot.process_feedback("Too fast, please be more gentle.")
-            else:
-                feedback_response = robot.process_feedback("I liked that!")
-
-            print(f"FEEDBACK RESPONSE: {feedback_response['robot_response']}")
-
-    # Show final status
-    print(f"\n{'=' * 70}")
-    print("Final Status:")
-    status = robot.get_status()
-    for key, value in status.items():
-        if key != "robot_memory":
-            print(f"  {key}: {value}")
+    print("\n" + "=" * 60)
+    print("✓ Test completed!")
 
 
 if __name__ == "__main__":

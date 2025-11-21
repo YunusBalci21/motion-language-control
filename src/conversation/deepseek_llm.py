@@ -1,101 +1,150 @@
 #!/usr/bin/env python3
 """
-Real DeepSeek LLM Integration using Transformers - FIXED with timeout
+Real DeepSeek LLM Integration using HuggingFace Transformers
 """
 
 import json
 import time
+import re
 import torch
-import signal
 from typing import Dict, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 try:
-    from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
+    from transformers import pipeline, AutoTokenizer
 
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
-    print("Transformers not available, using simulated responses")
+    print("⚠ Transformers not available, install with: pip install transformers")
 
 
 @dataclass
 class ConversationTurn:
     user_input: str
     llm_response: str
+    chain_of_thought: str
     extracted_actions: List[str]
     timestamp: float
     context: Dict
 
-
-class TimeoutError(Exception):
-    pass
-
-
-def timeout_handler(signum, frame):
-    raise TimeoutError("LLM generation timed out")
+    def to_dict(self):
+        return asdict(self)
 
 
 class DeepSeekLLM:
-    """Real DeepSeek LLM using Transformers with timeout fallback"""
+    """
+    DeepSeek LLM Interface using HuggingFace Transformers
+    """
 
-    def __init__(self, model_name: str = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B", timeout_seconds: int = 10):
+    def __init__(self,
+                 model_name: str = "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+                 device: str = "cuda" if torch.cuda.is_available() else "cpu",
+                 use_real_model: bool = True):
+
         self.model_name = model_name
-        self.timeout_seconds = timeout_seconds
+        self.device = device
+        self.use_real_model = use_real_model and TRANSFORMERS_AVAILABLE
         self.conversation_history: List[ConversationTurn] = []
+        self.pipeline = None
+        self.tokenizer = None
 
-        # System prompt for robotics
-        self.system_prompt = """You are a helpful robot assistant. When users ask you to perform physical tasks, respond in JSON format with:
-{
-    "thought_process": "step-by-step reasoning",
-    "motion_commands": ["walk forward", "turn left", etc.],
-    "estimated_duration": "time in seconds", 
-    "safety_notes": "safety considerations"
-}
+        # System prompt for robot control
+        self.system_prompt = """You are a helpful robot assistant that controls physical robots. 
 
-Available motion commands: walk forward, walk backward, turn left, turn right, stop moving, crouch down, stand up, reach forward, grasp object, release object."""
+When users ask you to perform tasks:
+1. Show your chain of thought reasoning using <think></think> tags
+2. Break down the task into simple motion commands
+3. Use ONLY these available commands:
+   - walk forward [slowly/quickly]
+   - walk backward
+   - turn left
+   - turn right  
+   - stop moving
+   - stand still
+   - crouch down
+   - reach forward
+   - pick up object
+   - place object
+   - wave hand
 
-        if TRANSFORMERS_AVAILABLE:
-            try:
-                print(f"Loading DeepSeek model: {model_name}")
-                print("⚠️  Note: Large model may be slow. Using 10-second timeout.")
+Respond in this format:
+<think>
+Your step-by-step reasoning here
+</think>
 
-                # Try to load with timeout
-                self.pipe = pipeline(
-                    "text-generation",
-                    model=model_name,
-                    torch_dtype=torch.float16,
-                    device_map="auto",
-                    max_new_tokens=100,  # Limit tokens for speed
-                    do_sample=True,
-                    temperature=0.3  # Lower temperature for more consistent responses
-                )
-                print("DeepSeek model loaded successfully!")
-                self.use_real_model = True
-            except Exception as e:
-                print(f"Failed to load DeepSeek model: {e}")
-                print("🎭 Using fast simulated responses for better user experience")
-                self.use_real_model = False
+Commands: command1, command2, command3
+
+Be safe and clear. If unsure, ask for clarification."""
+
+        # Initialize model
+        if self.use_real_model:
+            self._initialize_model()
         else:
+            print("⚠ Using simulated responses")
+
+    def _initialize_model(self):
+        """Initialize DeepSeek model from HuggingFace"""
+        try:
+            print(f"\n🧠 Loading DeepSeek model: {self.model_name}")
+            print(f"   Device: {self.device}")
+            print("   This may take a minute...")
+
+            # Initialize tokenizer
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+
+            # Initialize pipeline
+            self.pipeline = pipeline(
+                "text-generation",
+                model=self.model_name,
+                device=0 if self.device == "cuda" else -1,
+                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                tokenizer=self.tokenizer,
+                max_new_tokens=150,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9
+            )
+
+            print("✅ DeepSeek model loaded successfully!")
+            self.use_real_model = True
+
+        except Exception as e:
+            print(f"❌ Failed to load DeepSeek model: {e}")
+            print("   Falling back to simulated responses...")
             self.use_real_model = False
+            self.pipeline = None
 
     def process_user_request(self, user_input: str, context: Dict = None) -> ConversationTurn:
-        """Process request with DeepSeek or fast fallback"""
+        """
+        Process user request with DeepSeek
+        """
         if context is None:
             context = {}
 
-        print(f"\nUser: {user_input}")
+        print(f"\n{'=' * 60}")
+        print(f"User: {user_input}")
+        print(f"{'=' * 60}")
 
-        if self.use_real_model:
-            llm_response = self._call_real_deepseek_with_timeout(user_input, context)
+        # Get LLM response
+        if self.use_real_model and self.pipeline:
+            llm_response = self._call_deepseek(user_input, context)
         else:
-            llm_response = self._fallback_response(user_input, context)
+            llm_response = self._simulated_response(user_input, context)
 
+        # Extract chain of thought
+        chain_of_thought = self._extract_chain_of_thought(llm_response)
+
+        # Extract motion commands
         extracted_actions = self._extract_motion_commands(llm_response)
 
+        # Create conversation turn
         turn = ConversationTurn(
             user_input=user_input,
             llm_response=llm_response,
+            chain_of_thought=chain_of_thought,
             extracted_actions=extracted_actions,
             timestamp=time.time(),
             context=context
@@ -103,173 +152,239 @@ Available motion commands: walk forward, walk backward, turn left, turn right, s
 
         self.conversation_history.append(turn)
 
-        print(f"DeepSeek: {llm_response}")
-        print(f"Extracted Actions: {extracted_actions}")
+        # Display results
+        print(f"\n🤖 DeepSeek Response:")
+        print(f"{chain_of_thought}")
+        print(f"\n📝 Extracted Commands: {extracted_actions}")
 
         return turn
 
-    def _call_real_deepseek_with_timeout(self, user_input: str, context: Dict) -> str:
-        """Call real DeepSeek model with timeout fallback"""
+    def _call_deepseek(self, user_input: str, context: Dict) -> str:
+        """Call real DeepSeek model with simpler prompting"""
         try:
-            print("🧠 Calling DeepSeek model (with timeout)...")
+            # Much simpler prompt - DeepSeek-R1 works better with direct instructions
+            full_prompt = f"""You are controlling a robot. The user says: "{user_input}"
 
-            # Set up timeout
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(self.timeout_seconds)
+    Think step-by-step, then list the robot commands.
 
-            try:
-                # Build conversation with system prompt
-                messages = [
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_input}
-                ]
+    Your response:
+    <think>
+    """
 
-                # Generate response
-                response = self.pipe(
-                    messages,
-                    max_new_tokens=50,  # Keep it short for speed
-                    temperature=0.3,
-                    do_sample=True,
-                    pad_token_id=self.pipe.tokenizer.eos_token_id
-                )
+            print("\n⏳ Generating response from DeepSeek...")
 
-                # Extract response text
-                response_text = response[0]['generated_text'][-1]['content']
+            start_time = time.time()
+            response = self.pipeline(
+                full_prompt,
+                max_new_tokens=250,
+                temperature=0.5,
+                do_sample=True,
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+                repetition_penalty=1.2,
+                top_p=0.9
+            )
 
-                # Cancel timeout
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
+            elapsed = time.time() - start_time
+            print(f"✓ Response generated in {elapsed:.2f}s")
 
-                print("✅ DeepSeek responded successfully!")
-                return response_text
+            generated_text = response[0]['generated_text']
 
-            except TimeoutError:
-                print(f"⏰ DeepSeek timed out after {self.timeout_seconds}s, using fast fallback")
-                return self._fallback_response(user_input, context)
+            # Extract after our prompt
+            if "Your response:" in generated_text:
+                llm_response = generated_text.split("Your response:")[-1].strip()
+            else:
+                llm_response = generated_text
+
+            # Ensure it has the think structure
+            if "<think>" not in llm_response:
+                llm_response = f"<think>\nAnalyzing: {user_input}\n</think>\n\n{llm_response}"
+
+            # If response doesn't have commands, add them
+            if "Commands:" not in llm_response.lower():
+                # Extract actions from user input
+                user_lower = user_input.lower()
+                if "walk forward" in user_lower:
+                    cmd = "walk forward slowly" if "slow" in user_lower else "walk forward"
+                    llm_response += f"\n\nCommands: {cmd}"
+                elif "turn left" in user_lower:
+                    llm_response += "\n\nCommands: turn left"
+                elif "turn right" in user_lower:
+                    llm_response += "\n\nCommands: turn right"
+                elif "stop" in user_lower:
+                    llm_response += "\n\nCommands: stop moving"
+                else:
+                    llm_response += f"\n\nCommands: {user_input.lower()}"
+
+            return llm_response
 
         except Exception as e:
-            print(f"❌ DeepSeek generation failed: {e}")
-            print("🎭 Using fast fallback response")
-            return self._fallback_response(user_input, context)
-        finally:
-            # Always restore signal handler
-            try:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
-            except:
-                pass
+            print(f"❌ DeepSeek call failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._simulated_response(user_input, context)
 
-    def _fallback_response(self, user_input: str, context: Dict) -> str:
-        """Fast fallback simulated responses"""
+    def _simulated_response(self, user_input: str, context: Dict) -> str:
+        """
+        Simulated LLM response with chain of thought
+        """
         user_lower = user_input.lower()
 
-        if "clean" in user_lower and "table" in user_lower:
-            return json.dumps({
-                "thought_process": "To clean the table, I need to: 1) Walk to the table, 2) Pick up objects, 3) Wipe the surface clean",
-                "motion_commands": ["walk forward", "reach forward", "grasp object", "turn left", "release object",
-                                    "wipe surface"],
-                "estimated_duration": "30 seconds",
-                "safety_notes": "Be careful with objects"
-            })
-        elif "walk" in user_lower:
-            direction = "forward"
-            if "left" in user_lower:
-                direction = "left"
-            elif "right" in user_lower:
-                direction = "right"
-            elif "backward" in user_lower:
-                direction = "backward"
+        # Pattern matching for common requests
+        if "clean" in user_lower or "wipe" in user_lower:
+            return """<think>
+The user wants me to clean something. Let me break this down:
+1. First, I need to reach forward to the surface
+2. Then make wiping motions across the surface
+3. I should move slowly to be thorough
+4. Finally, return to neutral position
+This requires: reach, repetitive forward motions, and controlled movement
+</think>
 
-            return json.dumps({
-                "thought_process": f"User wants me to walk {direction}. This is a basic locomotion task.",
-                "motion_commands": [f"walk {direction}"],
-                "estimated_duration": "10 seconds",
-                "safety_notes": "Maintain balance"
-            })
+Commands: reach forward, walk forward slowly, turn left, walk forward slowly, turn right, stop moving"""
+
+        elif "walk forward" in user_lower or "move forward" in user_lower:
+            speed = "slowly" if "slow" in user_lower else "quickly" if "fast" in user_lower or "quick" in user_lower else ""
+            return f"""<think>
+User wants me to walk forward. I need to:
+1. Check that the path is clear (assumed)
+2. Maintain good balance while walking
+3. Walk at {'slow' if speed == 'slowly' else 'fast' if speed == 'quickly' else 'normal'} speed
+4. Be ready to stop if needed
+</think>
+
+Commands: walk forward {speed}"""
+
         elif "turn" in user_lower:
-            direction = "left" if "left" in user_lower else "right" if "right" in user_lower else "left"
-            return json.dumps({
-                "thought_process": f"User wants me to turn {direction}. I need to rotate my body.",
-                "motion_commands": [f"turn {direction}"],
-                "estimated_duration": "8 seconds",
-                "safety_notes": "Turn smoothly"
-            })
+            direction = "left" if "left" in user_lower else "right"
+            return f"""<think>
+User wants me to turn {direction}. Steps:
+1. Stop current motion first
+2. Turn {direction} while maintaining balance
+3. Complete the turn
+4. Be ready for next instruction
+</think>
+
+Commands: stop moving, turn {direction}, stand still"""
+
         elif "dance" in user_lower:
-            return json.dumps({
-                "thought_process": "User wants me to dance. I'll create a fun movement sequence.",
-                "motion_commands": ["walk forward", "turn left", "turn right", "walk backward"],
-                "estimated_duration": "20 seconds",
-                "safety_notes": "Smooth movements"
-            })
-        elif "pick up" in user_lower or "grasp" in user_lower:
-            return json.dumps({
-                "thought_process": "User wants me to pick up an object. I need to approach and grasp it carefully.",
-                "motion_commands": ["walk forward", "reach forward", "grasp object"],
-                "estimated_duration": "15 seconds",
-                "safety_notes": "Gentle grip on objects"
-            })
-        elif "organize" in user_lower or "help" in user_lower:
-            return json.dumps({
-                "thought_process": "User wants help organizing. I'll walk around and pick up objects systematically.",
-                "motion_commands": ["walk forward", "turn left", "reach forward", "grasp object", "turn right",
-                                    "release object"],
-                "estimated_duration": "45 seconds",
-                "safety_notes": "Careful with fragile items"
-            })
+            return """<think>
+User wants me to dance! This is fun but requires:
+1. Maintaining balance throughout
+2. Alternating motions for rhythm
+3. Multiple movement types
+4. Safe execution
+Let me create a simple dance sequence
+</think>
+
+Commands: walk forward slowly, turn left, walk forward slowly, turn right, wave hand, stop moving"""
+
+        elif "stop" in user_lower or "still" in user_lower:
+            return """<think>
+User wants me to stop all motion. Safety first:
+1. Immediately cease all movement
+2. Maintain stable standing position
+3. Wait for next instruction
+</think>
+
+Commands: stop moving, stand still"""
+
+        elif "pick" in user_lower or "grab" in user_lower or "grasp" in user_lower:
+            return """<think>
+User wants me to pick something up. Sequence:
+1. Reach forward to the object
+2. Position hand correctly
+3. Grasp the object securely
+4. Lift carefully
+</think>
+
+Commands: reach forward, pick up object, stand still"""
+
         else:
-            return json.dumps({
-                "thought_process": "I'll help with a basic movement.",
-                "motion_commands": ["walk forward"],
-                "estimated_duration": "5 seconds",
-                "safety_notes": "Basic movement"
-            })
+            return f"""<think>
+I received the request: "{user_input}"
+I'm not sure exactly what motion this requires. Let me:
+1. Ask for clarification to be safe
+2. Suggest some alternatives if helpful
+I should not execute unclear commands for safety
+</think>
 
-    def _extract_motion_commands(self, llm_response: str) -> List[str]:
+I'm not sure I understand. Could you clarify? Try commands like: walk forward, turn left, stop moving, clean table, pick up object."""
+
+    def _extract_chain_of_thought(self, response: str) -> str:
+        """Extract chain of thought from <think> tags"""
+        match = re.search(r'<think>(.*?)</think>', response, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        return "No explicit reasoning provided"
+
+    def _extract_motion_commands(self, response: str) -> List[str]:
         """Extract motion commands from response"""
-        try:
-            if llm_response.startswith('{'):
-                response_data = json.loads(llm_response)
-                return response_data.get("motion_commands", ["walk forward"])
-            else:
-                # Try to extract JSON from text
-                start = llm_response.find('{')
-                end = llm_response.rfind('}') + 1
-                if start != -1 and end != -1:
-                    json_str = llm_response[start:end]
-                    response_data = json.loads(json_str)
-                    return response_data.get("motion_commands", ["walk forward"])
-                else:
-                    return ["walk forward"]
-        except:
-            return ["walk forward"]
+        # Look for "Commands:" line
+        commands_match = re.search(r'Commands?:\s*(.+?)(?:\n|$)', response, re.IGNORECASE)
+        if commands_match:
+            commands_str = commands_match.group(1).strip()
+            # Split by comma
+            commands = [cmd.strip() for cmd in commands_str.split(',')]
+            return [cmd for cmd in commands if cmd]
 
-    def add_feedback(self, feedback: str, execution_result: Dict):
-        """Add feedback (for compatibility)"""
-        print(f"Feedback received: {feedback}")
+        # Fallback: extract known commands
+        known_commands = [
+            "walk forward slowly", "walk forward quickly", "walk forward",
+            "walk backward", "turn left", "turn right",
+            "stop moving", "stand still", "crouch down",
+            "reach forward", "pick up object", "place object",
+            "wave hand", "clean table"
+        ]
+
+        found_commands = []
+        response_lower = response.lower()
+        for cmd in known_commands:
+            if cmd in response_lower:
+                found_commands.append(cmd)
+
+        return found_commands if found_commands else ["stand still"]
+
+    def get_conversation_summary(self) -> Dict:
+        """Get summary of conversation"""
+        return {
+            "total_turns": len(self.conversation_history),
+            "total_commands_issued": sum(len(turn.extracted_actions) for turn in self.conversation_history),
+            "recent_turns": [turn.to_dict() for turn in self.conversation_history[-5:]],
+            "using_real_model": self.use_real_model
+        }
 
 
-# Test function
-def test_deepseek():
-    print("Testing Fixed DeepSeek Integration")
-    print("=" * 40)
+def test_deepseek_llm():
+    """Test the DeepSeek LLM interface"""
+    print("Testing DeepSeek LLM Interface")
+    print("=" * 60)
 
-    llm = DeepSeekLLM()
+    # Try to use real model
+    llm = DeepSeekLLM(use_real_model=True)
 
-    test_queries = [
+    test_requests = [
+        "Hey, can you clean the table?",
         "Walk forward please",
-        "Can you clean the table?",
-        "Turn left and dance",
-        "Pick up that object"
+        "Turn left and then walk forward",
+        "Stop moving",
+        "Dance for me!",
+        "Pick up that object over there"
     ]
 
-    for query in test_queries:
-        print(f"\n{'=' * 50}")
-        start_time = time.time()
-        turn = llm.process_user_request(query)
-        end_time = time.time()
-        print(f"Response time: {end_time - start_time:.2f}s")
-        print(f"Actions: {turn.extracted_actions}")
+    for request in test_requests:
+        turn = llm.process_user_request(request)
+        print(f"\n✓ Processed: '{request}'")
+        print(f"  Actions: {turn.extracted_actions}")
+        time.sleep(1)
+
+    print("\n" + "=" * 60)
+    print("Summary:")
+    summary = llm.get_conversation_summary()
+    print(f"Total turns: {summary['total_turns']}")
+    print(f"Total commands: {summary['total_commands_issued']}")
+    print(f"Using real DeepSeek: {summary['using_real_model']}")
 
 
 if __name__ == "__main__":
-    test_deepseek()
+    test_deepseek_llm()
