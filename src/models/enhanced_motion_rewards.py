@@ -1,154 +1,204 @@
-#!/usr/bin/env python3
 """
-Enhanced Motion Reward System
-Addresses low similarity scores with better reward shaping
+Enhanced Motion Reward System - FIXED
 """
 
 import numpy as np
-import torch
-import torch.nn.functional as F
-from typing import Dict, Tuple
+
+try:
+    import torch
+except ImportError:
+    torch = None
 
 
 class EnhancedMotionRewardShaper:
-    """Enhanced reward shaping specifically for stability instructions"""
-
     def __init__(self):
-        self.stability_keywords = [
-            'stably', 'stable', 'balance', 'carefully', 'without falling',
-            'maintain balance', 'steady', 'smoothly'
-        ]
+        self.min_stable_height = 1.2
+        self.critical_height = 0.9
+        self.max_stable_speed = 2.0
+        self.target_walk_speed = 0.5
 
-        self.movement_keywords = [
-            'walk', 'move', 'step', 'forward', 'backward',
-            'turn', 'rotate', 'run', 'march'
-        ]
-
-    def enhanced_stability_reward(self, motion_features: np.ndarray,
-                                  instruction: str) -> float:
-        """
-        Enhanced reward specifically for stability-focused instructions
-        """
+    def _extract_state_features(self, motion_features: np.ndarray):
         if len(motion_features.shape) == 1:
             motion_features = motion_features.reshape(1, -1)
 
+        current = motion_features[-1]
+
+        return {
+            'height': current[0],
+            'vx': current[16] if len(current) > 16 else 0.0,
+            'vy': current[17] if len(current) > 17 else 0.0,
+            'vz': current[18] if len(current) > 18 else 0.0,
+            'speed': np.linalg.norm(current[16:19]) if len(current) > 18 else 0.0,
+        }
+
+    def _compute_stability_score(self, features):
+        height = features['height']
+        speed = features['speed']
+
+        # CRITICAL: If fallen, return 0 immediately
+        if height < self.critical_height:
+            return 0.0
+
+        # Height score
+        if height < self.min_stable_height:
+            height_score = (height - self.critical_height) / (self.min_stable_height - self.critical_height)
+        else:
+            height_score = 1.0
+
+        # Speed control
+        if speed > self.max_stable_speed:
+            speed_score = np.exp(-(speed - self.max_stable_speed))
+        else:
+            speed_score = 1.0
+
+        # Combine (70% height, 30% speed)
+        stability = 0.7 * height_score + 0.3 * speed_score
+
+        return np.clip(stability, 0.0, 1.0)
+
+    def enhanced_stability_reward(self, motion_features: np.ndarray, instruction: str) -> float:
+        features = self._extract_state_features(motion_features)
+        return self._compute_stability_score(features)
+
+    def enhanced_motion_language_similarity(self, motion_sequence: np.ndarray, instruction: str) -> float:
+        if torch is not None and isinstance(motion_sequence, torch.Tensor):
+            motion_sequence = motion_sequence.detach().cpu().numpy()
+        elif not isinstance(motion_sequence, np.ndarray):
+            motion_sequence = np.array(motion_sequence)
+
+        features = self._extract_state_features(motion_sequence)
         instruction_lower = instruction.lower()
 
-        # Base stability metrics
-        stability_reward = 0.0
+        # STEP 1: STABILITY GATE
+        stability_score = self._compute_stability_score(features)
 
-        # 1. Height consistency (staying upright)
-        if motion_features.shape[1] > 0:
-            height_values = motion_features[:, 0]  # Z coordinate
-            height_consistency = 1.0 - np.var(height_values)
-            if height_consistency > 0:
-                stability_reward += height_consistency * 0.3
+        # If fallen or too unstable, return 0
+        if stability_score < 0.3:
+            return 0.0
 
-        # 2. Orientation stability (not rolling/pitching too much)
-        if motion_features.shape[1] > 7:
-            # Roll and pitch from euler angles
-            roll_values = motion_features[:, 3] if motion_features.shape[1] > 3 else np.zeros(motion_features.shape[0])
-            roll_stability = np.exp(-np.var(roll_values))
-            stability_reward += roll_stability * 0.2
+        # STEP 2: TASK REWARD
+        task_reward = 0.0
 
-        # 3. Movement consistency for walking
-        if any(word in instruction_lower for word in ['walk', 'move', 'step']):
-            if motion_features.shape[1] > 24:
-                movement_values = motion_features[:, 24]  # Overall movement magnitude
-                movement_consistency = 1.0 - np.var(movement_values)
-                if movement_consistency > 0:
-                    stability_reward += movement_consistency * 0.2
+        # Detect slow mode
+        slow_mode = 'slowly' in instruction_lower or 'slow' in instruction_lower
+        target_speed = 0.3 if slow_mode else self.target_walk_speed
 
-        # 4. Bonus for stability keywords
-        stability_bonus = 0.0
-        for keyword in self.stability_keywords:
-            if keyword in instruction_lower:
-                stability_bonus += 0.1
+        # Standing/Static
+        if any(w in instruction_lower for w in ['stand', 'stop', 'still', 'balance']):
+            speed = features['speed']
+            if speed < 0.1:
+                task_reward = 1.0
+            elif speed < 0.3:
+                task_reward = 1.0 - (speed / 0.3)
+            else:
+                task_reward = 0.0
 
-        stability_reward += min(stability_bonus, 0.3)  # Cap at 0.3
+        # Forward movement
+        elif 'forward' in instruction_lower or 'walk' in instruction_lower:
+            vx = features['vx']
 
-        # 5. Forward progress for walking instructions
-        if 'forward' in instruction_lower and motion_features.shape[1] > 29:
-            # Use forward displacement
-            fwd_disp = motion_features[:, 29] if motion_features.shape[1] > 29 else 0
-            forward_progress = np.mean(np.maximum(fwd_disp, 0)) * 0.2
-            stability_reward += forward_progress
+            if vx < 0.1:
+                task_reward = 0.0
+            else:
+                # Gaussian around target speed
+                speed_error = abs(vx - target_speed)
+                task_reward = np.exp(-4.0 * (speed_error ** 2))
 
-        return np.clip(stability_reward, 0.0, 1.0)
+                # Penalty for too fast
+                if vx > target_speed * 1.5:
+                    task_reward *= 0.3
 
-    def enhanced_motion_language_similarity(self, motion_sequence: np.ndarray,
-                                            instruction: str) -> float:
-        """
-        Enhanced similarity computation with better stability focus
-        """
-        # Get base stability reward
+        # Backward movement
+        elif 'backward' in instruction_lower or 'back' in instruction_lower:
+            vx = features['vx']
+            if vx > -0.1:
+                task_reward = 0.0
+            else:
+                speed_error = abs(abs(vx) - target_speed)
+                task_reward = np.exp(-4.0 * (speed_error ** 2))
+
+        # Generic movement
+        else:
+            if features['speed'] > 0.2:
+                task_reward = 0.3
+
+        # STEP 3: APPLY STABILITY GATE
+        # Stability must be >0.7 for full task reward
+        if stability_score < 0.7:
+            gate_factor = stability_score / 0.7
+        else:
+            gate_factor = 1.0
+
+        final_score = gate_factor * task_reward
+
+        return np.clip(final_score, 0.0, 1.0)
+
+    def compute_multi_objective_reward(self, motion_sequence: np.ndarray,
+                                      instruction: str,
+                                      stability_weight: float = 0.6):
+        features = self._extract_state_features(motion_sequence)
+
         stability_reward = self.enhanced_stability_reward(motion_sequence, instruction)
+        task_reward = self.enhanced_motion_language_similarity(motion_sequence, instruction)
 
-        # Movement detection
-        movement_detected = 0.0
-        if motion_sequence.shape[1] > 24:
-            movement_magnitude = np.mean(motion_sequence[:, 24])
-            if movement_magnitude > 0.01:  # Lower threshold
-                movement_detected = 0.3
+        total = stability_weight * stability_reward + (1 - stability_weight) * task_reward
 
-        # Instruction-specific bonuses
-        instruction_bonus = 0.0
-        instruction_lower = instruction.lower()
+        info = {
+            'stability_reward': stability_reward,
+            'task_reward': task_reward,
+            'total_reward': total,
+            'height': features['height'],
+            'speed': features['speed'],
+            'vx': features['vx'],
+        }
 
-        if 'stably' in instruction_lower:
-            instruction_bonus = stability_reward * 0.5
-
-        if 'walk' in instruction_lower:
-            if movement_detected > 0:
-                instruction_bonus += 0.2
-
-        if 'forward' in instruction_lower:
-            # Check for forward motion indicators
-            if motion_sequence.shape[1] > 16:
-                forward_indicators = np.mean(motion_sequence[:, 16:20])  # Joint velocities
-                if forward_indicators > 0.01:
-                    instruction_bonus += 0.2
-
-        # Combine all components
-        total_similarity = (
-                0.4 * stability_reward +
-                0.3 * movement_detected +
-                0.3 * instruction_bonus
-        )
-
-        return np.clip(total_similarity, 0.0, 1.0)
+        return total, info
 
 
 def test_enhanced_rewards():
-    """Test the enhanced reward system"""
-    print("Testing Enhanced Motion Rewards")
-    print("=" * 40)
+    print("Testing FIXED Rewards")
+    print("=" * 50)
 
     rewarder = EnhancedMotionRewardShaper()
 
-    # Create test motion data
-    stable_motion = np.random.randn(10, 30) * 0.05  # Small movements = stable
-    stable_motion[:, 0] = 1.0 + np.random.randn(10) * 0.02  # Consistent height
+    # Test 1: Fallen
+    print("\n1. FALLEN (height=0.7m)")
+    falling = np.zeros((1, 30))
+    falling[0, 0] = 0.7
+    falling[0, 16] = 1.0
+    score = rewarder.enhanced_motion_language_similarity(falling, "walk forward")
+    print(f"   Score: {score:.3f} (Should be 0.0)")
+    assert score < 0.1, f"Failed: Score {score:.3f} should be 0.0"
 
-    unstable_motion = np.random.randn(10, 30) * 0.3  # Large movements = unstable
-    unstable_motion[:, 0] = 1.0 + np.random.randn(10) * 0.2  # Variable height
+    # Test 2: Too fast
+    print("\n2. TOO FAST (height=1.0m, vx=2.5m/s)")
+    running = np.zeros((1, 30))
+    running[0, 0] = 1.0
+    running[0, 16] = 2.5
+    score = rewarder.enhanced_motion_language_similarity(running, "walk forward")
+    print(f"   Score: {score:.3f} (Should be low)")
+    assert score < 0.3, f"Failed: Score {score:.3f} should be <0.3"
 
-    # Test on stability instruction
-    instruction = "walk stably"
+    # Test 3: Good standing
+    print("\n3. GOOD STANDING (height=1.3m, speed=0.05m/s)")
+    standing = np.zeros((1, 30))
+    standing[0, 0] = 1.3
+    standing[0, 16] = 0.05
+    score = rewarder.enhanced_motion_language_similarity(standing, "stand still")
+    print(f"   Score: {score:.3f} (Should be high)")
+    assert score > 0.7, f"Failed: Score {score:.3f} should be >0.7"
 
-    stable_sim = rewarder.enhanced_motion_language_similarity(stable_motion, instruction)
-    unstable_sim = rewarder.enhanced_motion_language_similarity(unstable_motion, instruction)
+    # Test 4: Good walking
+    print("\n4. GOOD WALKING (height=1.3m, vx=0.5m/s)")
+    walking = np.zeros((1, 30))
+    walking[0, 0] = 1.3
+    walking[0, 16] = 0.5
+    score = rewarder.enhanced_motion_language_similarity(walking, "walk forward")
+    print(f"   Score: {score:.3f} (Should be high)")
+    assert score > 0.7, f"Failed: Score {score:.3f} should be >0.7"
 
-    print(f"Instruction: '{instruction}'")
-    print(f"Stable motion similarity: {stable_sim:.3f}")
-    print(f"Unstable motion similarity: {unstable_sim:.3f}")
-
-    if stable_sim > unstable_sim:
-        print("✓ Enhanced rewards correctly prefer stable motion")
-    else:
-        print("✗ Enhanced rewards need more tuning")
-
-    return rewarder
+    print("\n" + "=" * 50)
+    print("✓ ALL TESTS PASSED")
 
 
 if __name__ == "__main__":

@@ -77,7 +77,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         reward_aggregation: str = "weighted_recent",
         record_video: bool = False,
         video_path: Optional[str] = None,
-        stability_focus: bool = False,  # NEW
+        stability_focus: bool = False,
     ):
         super().__init__(env)
         self.motion_tokenizer = motion_tokenizer
@@ -125,15 +125,24 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         self.fall_count = 0
         self.stability_bonus = 0.0
         self.consecutive_stable_steps = 0
-        # Keep enough action to move; clip only gently if enabled
-        self.max_action_magnitude = 0.85 if stability_focus else 1.0
+        self.max_action_magnitude = 0.7 if stability_focus else 0.9
 
-        # --- shaping knobs ---
-        self.progress_bonus_weight = 2.5  # <— increase influence of progress shaping
-        self.speed_sigma = 0.35  # <— Gaussian width around target speed (m/s)
-        self.min_step_speed = 0.05  # <— small dead-zone to ignore jitter
+        # Shaping parameters
+        self.progress_bonus_weight = 10
+        self.speed_sigma = 0.35
+        self.min_step_speed = 0.05
 
-        # --- MuJoCo handles ---
+        self.action_filter_alpha = 0.9
+        self.prev_action = None
+
+        # Target speeds
+        self._target_speeds = {
+            'slow': 0.3,
+            'normal': 0.5,
+            'fast': 0.7
+        }
+
+        # MuJoCo handles
         self.mj_model = None
         self.mj_data = None
         self.dt = 0.02
@@ -147,7 +156,6 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         self._prev_yaw = None
         self.init_mujoco_handles()
 
-        # Keep base obs space unchanged
         self.observation_space = env.observation_space
 
         print("DirectMotionLanguageWrapper initialized:")
@@ -158,7 +166,6 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         print(f"  Video recording: {record_video}")
         print(f"  Stability focus: {stability_focus}")
 
-    # -------------------- MuJoCo helpers -------------------- #
     def init_mujoco_handles(self) -> None:
         """Initialize MuJoCo model/data and compute observation index ranges."""
         try:
@@ -169,7 +176,6 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
                 self.dt = float(self.mj_model.opt.timestep * getattr(unwrapped, "frame_skip", 1))
                 self.nq = int(self.mj_model.nq)
                 self.nv = int(self.mj_model.nv)
-                # Humanoid obs layout: [qpos[2:], qvel, ...]
                 self.qpos_removed = self.nq - 2
                 self.qvel_lo = self.qpos_removed
                 self.qvel_hi = self.qvel_lo + self.nv
@@ -181,15 +187,14 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
 
     @staticmethod
     def _quat_to_euler_xyz(qw, qx, qy, qz):
-        # roll (x-axis rotation)
         sinr_cosp = 2 * (qw * qx + qy * qz)
         cosr_cosp = 1 - 2 * (qx * qx + qy * qy)
         roll = math.atan2(sinr_cosp, cosr_cosp)
-        # pitch (y-axis rotation)
+
         sinp = 2 * (qw * qy - qz * qx)
         sinp = max(-1.0, min(1.0, sinp))
         pitch = math.asin(sinp)
-        # yaw (z-axis rotation)
+
         siny_cosp = 2 * (qw * qz + qx * qy)
         cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
         yaw = math.atan2(siny_cosp, cosy_cosp)
@@ -205,9 +210,10 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             self._prev_yaw = yaw
             return yaw, 0.0
         dyaw = yaw - self._prev_yaw
-        # wrap to [-pi, pi]
-        if dyaw > math.pi: dyaw -= 2 * math.pi
-        if dyaw < -math.pi: dyaw += 2 * math.pi
+        if dyaw > math.pi:
+            dyaw -= 2 * math.pi
+        if dyaw < -math.pi:
+            dyaw += 2 * math.pi
         yaw_rate = dyaw / self.dt
         self._prev_yaw = yaw
         return yaw, yaw_rate
@@ -220,7 +226,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             obs1 = obs if obs.ndim == 1 else obs[0]
             qvel = obs1[self.qvel_lo : self.qvel_hi]
             if len(qvel) >= 6:
-                return float(qvel[5])  # wz
+                return float(qvel[5])
         except Exception:
             pass
         return float("nan")
@@ -274,40 +280,54 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         except Exception:
             return 0.0
 
-    # STABILITY: detect fall / bonus
     def check_stability(self, obs: np.ndarray) -> Tuple[bool, float]:
-        """Check if humanoid is stable and compute stability bonus."""
+        """Strict stability check with speed control"""
         try:
             if self.mj_data is not None:
                 height = float(self.mj_data.qpos[2])
                 qw, qx, qy, qz = map(float, self.mj_data.qpos[3:7])
-                # simple upright proxy: w near 1 when upright (not perfect but robust)
                 uprightness = abs(qw)
             else:
-                # Fallback
                 height = 1.0
                 uprightness = 1.0
 
-            if height < 0.8:
-                return False, -10.0  # fall penalty
+            # STRICT height check
+            if height < 1.0:
+                return False, -20.0
 
+            # STRICT uprightness check
+            if uprightness < 0.85:
+                return False, -20.0
+
+            # Speed check
+            vx = self.forward_speed_from_obs(obs)
+            if np.isnan(vx):
+                vx = self.forward_speed_fd()
+
+            if abs(vx) > 2.0:
+                return False, -15.0
+
+            # Compute stability bonus
             stability_bonus = 0.0
-            if height > 1.0:
-                stability_bonus += min(2.0, (height - 1.0) * 1.0)
-            stability_bonus += max(0.0, (uprightness - 0.8) * 1.0)
 
-            # Penalize extreme yaw rate
+            if vx > 0.1:
+                if height > 1.0:
+                    stability_bonus += min(1.0, (height - 1.0) * 0.5)
+                stability_bonus += max(0.0, (uprightness - 0.8) * 0.5)
+
+            if abs(vx) < 0.05:
+                stability_bonus -= 0.5
+
             yr = self.yaw_rate_from_obs(obs)
             if np.isnan(yr):
                 yr = self.fallback_yaw_rate_fd()
             if abs(yr) < 2.0:
-                stability_bonus += 0.2
+                stability_bonus += 0.1
 
             return True, stability_bonus
         except Exception:
             return True, 0.0
 
-    # -------------------------- Public interface -------------------------- #
     def set_instruction(self, instruction: str) -> None:
         """Change instruction and reset tracking."""
         self.current_instruction = instruction
@@ -321,12 +341,10 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         self.consecutive_stable_steps = 0
         print(f"Instruction changed to: '{instruction}'")
 
-    # ------------------------ Features -------------------------- #
     def extract_motion_features(self, obs: np.ndarray) -> np.ndarray:
         """Extract motion features using tokenizer."""
         return self.motion_tokenizer.extract_motion_from_obs(obs, self.env_name)
 
-    # -------------------- Language reward ----------------------- #
     def compute_enhanced_motion_language_reward(self) -> Tuple[float, float, float, dict]:
         """
         Compute enhanced motion-language reward with proper temporal handling
@@ -341,12 +359,12 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
                 motion_sequence = np.array(list(self.motion_history)[-10:])
             elif self.reward_aggregation == "full_sequence":
                 motion_sequence = np.array(list(self.motion_history))
-            else:  # "weighted_recent" default
+            else:
                 motion_sequence = np.array(list(self.motion_history)[-10:])
 
             motion_tensor = torch.from_numpy(motion_sequence).float()
             if motion_tensor.dim() == 2:
-                motion_tensor = motion_tensor.unsqueeze(0)  # add batch
+                motion_tensor = motion_tensor.unsqueeze(0)
 
             similarity = self.motion_tokenizer.compute_motion_language_similarity(
                 motion_tensor,
@@ -377,62 +395,106 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             print(f"Enhanced reward computation failed: {e}")
             return 0.0, 0.0, 0.0, {}
 
-    # ----------------------- Progress bonuses ---------------------- #
     def _target_speed_from_text(self) -> float:
         il = self.current_instruction.lower()
-        if "slow" in il:
-            return 0.6
+        if "slow" in il or "slowly" in il:
+            return 0.3
         if "quick" in il or "run" in il or "fast" in il:
-            return 1.8
-        return 1.2
+            return 0.7
+        return 0.5
 
     def compute_instruction_progress_bonus(self, vx: float, yaw_rate: float) -> float:
         il = self.current_instruction.lower()
         bonus = 0.0
         sigma = self.speed_sigma
 
-        # Forward/backward speed shaping (Gaussian around target + ramp)
-        if "forward" in il:
+        # Check height first
+        if self.mj_data is not None:
+            height = float(self.mj_data.qpos[2])
+            if height < 1.0:
+                return -10.0
+
+        # Stand still instruction
+        if "stop" in il or "still" in il or "stand" in il:
+            if self.mj_data is not None:
+                qvel = self.mj_data.qvel
+                total_vel = np.linalg.norm(qvel)
+
+                if total_vel < 0.5:
+                    bonus += 10.0
+                elif total_vel < 1.0:
+                    bonus += 5.0
+                elif total_vel < 2.0:
+                    bonus += 2.0
+                else:
+                    bonus -= 5.0
+
+                if abs(vx) > 0.1:
+                    bonus -= 10.0 * abs(vx)
+
+                if len(self.forward_speed_history) >= 10:
+                    recent_speeds = list(self.forward_speed_history)[-10:]
+                    max_speed = max(abs(s) for s in recent_speeds)
+                    if max_speed < 0.05:
+                        bonus += 15.0
+                    elif max_speed < 0.1:
+                        bonus += 8.0
+
+                if height > 1.2 and height < 1.4:
+                    bonus += 3.0
+
+                return bonus * 2.0
+
+        # Forward movement
+        elif "forward" in il:
+            if vx > 2.5:
+                return -5.0
+
             v_tgt = self._target_speed_from_text()
             align = math.exp(-((vx - v_tgt) ** 2) / (2.0 * sigma ** 2))
-            # Encourage positive speed beyond a tiny dead-zone to avoid “shiver” reward
-            ramp = max(0.0, vx - self.min_step_speed)
-            bonus += 1.2 * align + 0.4 * ramp
+            ramp = max(0.0, min(vx - self.min_step_speed, 1.0))
+
+            bonus += 2.0 * align + 1.0 * ramp
+
+            if len(self.forward_speed_history) >= 10:
+                recent = list(self.forward_speed_history)[-10:]
+                speed_std = np.std(recent)
+                mean_speed = np.mean(recent)
+
+                if speed_std < 0.5 and mean_speed > 0.3:
+                    bonus += 2.0 * (1.0 - speed_std)
+
+        # Backward movement
         elif "backward" in il:
             v_tgt = -self._target_speed_from_text()
             align = math.exp(-((vx - v_tgt) ** 2) / (2.0 * sigma ** 2))
             ramp = max(0.0, -vx - self.min_step_speed)
             bonus += 1.2 * align + 0.4 * ramp
 
-        # Turning: reward correct sign, penalize opposite sign
-        if "turn left" in il:
+        # Turning
+        elif "turn left" in il:
             bonus += 0.6 * max(0.0, yaw_rate) - 0.3 * max(0.0, -yaw_rate)
         elif "turn right" in il:
             bonus += 0.6 * max(0.0, -yaw_rate) - 0.3 * max(0.0, yaw_rate)
-        elif "turn" in il:
-            bonus += 0.3 * abs(yaw_rate)
-
-        # Still/stop stability reward
-        if "stop" in il or "still" in il:
-            if len(self.motion_history) >= 10:
-                recent = np.array(list(self.motion_history)[-10:])
-                movement_variance = float(np.var(recent))
-                bonus += max(0.0, 0.3 - movement_variance * 10.0)
 
         return float(bonus)
 
-    # ------------------------------ Step/Reset ---------------------------- #
     def step(self, action):
         """Execute action and return observation with language + shaping rewards."""
 
-        # Gentle action limiting only if stability focus is enabled
+        # Smooth actions
+        if self.prev_action is not None:
+            action = self.action_filter_alpha * action + (1 - self.action_filter_alpha) * self.prev_action
+        self.prev_action = action.copy()
+
+        # Action limiting
         if self.max_action_magnitude < 1.0:
             action = np.clip(action, -self.max_action_magnitude, self.max_action_magnitude)
 
-        # Execute the action
+        # Execute
         obs, env_reward, terminated, truncated, info = self.env.step(action)
 
-        # Update prev XY early (for finite-diff fallbacks)
+        # Update tracking
         try:
             if self.mj_data is not None:
                 cur_xy = self.mj_data.qpos[0:2].copy()
@@ -441,7 +503,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         except Exception:
             pass
 
-        # Extract motion features and histories
+        # Extract features
         motion_state = self.extract_motion_features(obs)
         self.motion_history.append(motion_state.copy())
         self.total_steps += 1
@@ -473,7 +535,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
                 print(f"Language reward computation failed: {e}")
                 language_reward = 0.0
 
-        # Instruction-specific progress shaping
+        # Progress bonus
         progress_bonus = self.compute_instruction_progress_bonus(vx, yaw_rate)
         progress_bonus *= self.progress_bonus_weight
 
@@ -485,20 +547,31 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         else:
             self.consecutive_stable_steps += 1
 
-        # Light energy penalty to discourage thrashing
+        # Energy penalty
         energy_penalty = 1e-3 * float(np.sum(np.square(action)))
 
-        # Total language-shaped reward
-        total_language_reward = language_reward + progress_bonus + stability_bonus - energy_penalty
+        # Uprightness bonus
+        uprightness_bonus = 0.0
+        if self.mj_data is not None:
+            height = float(self.mj_data.qpos[2])
+            qw = float(self.mj_data.qpos[3])
 
-        # Combine with env reward (keep env locomotion incentives)
+            if height > 1.2:
+                uprightness_bonus += 1.0
+            if abs(qw) > 0.9:
+                uprightness_bonus += 1.0
+
+        # Total reward
+        total_language_reward = (language_reward + progress_bonus +
+                                 stability_bonus + uprightness_bonus - energy_penalty)
+
         if self.language_reward_weight > 0:
             total_reward = ((1 - self.language_reward_weight) * env_reward +
                             self.language_reward_weight * total_language_reward)
         else:
             total_reward = env_reward + total_language_reward
 
-        # Success heuristic
+        # Success tracking
         self.episode_similarities.append(float(similarity))
         self.episode_success_rates.append(float(success_rate))
         if success_rate > 0.6 or (("forward" in self.current_instruction.lower()) and vx > 0.8):
@@ -532,7 +605,12 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             'dt': float(self.dt),
         })
 
-        # Record video frame
+        if self.episode_step_count % 50 == 0:
+            print(f"Step {self.episode_step_count}: vx={vx:.3f}, "
+                  f"lang_r={language_reward:.3f}, prog={progress_bonus:.3f}, "
+                  f"stab={stability_bonus:.3f}, total={total_reward:.3f}")
+
+        # Record video
         if self.record_video and self.video_frames is not None:
             try:
                 if hasattr(self.env, 'render'):
@@ -546,7 +624,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
 
     def reset(self, **kwargs):
         """Reset with episode stats, video save, and trackers reset."""
-        # Save last episode video
+        # Save video
         if self.record_video and self.video_frames and len(self.video_frames) > 10:
             try:
                 if self.video_path:
@@ -585,23 +663,19 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         self.episode_step_count = 0
         self.current_episode_success = False
 
-        # Reset stability tracking
         self.fall_count = 0
         self.consecutive_stable_steps = 0
         self.stability_bonus = 0.0
 
-        # Reset video buffer
         if self.record_video:
             self.video_frames = []
         self.episode_count += 1
 
-        # Seed yaw finite-diff tracker
         if self.mj_model is not None and self.mj_data is not None:
             self._prev_xy = np.array(self.mj_data.qpos[0:2], dtype=np.float64)
             self._prev_heading = None
             self._prev_yaw = None
 
-        # Add initial motion
         motion_features = self.extract_motion_features(obs)
         self.motion_history.append(motion_features)
         self.observation_history.append(obs.copy())
@@ -616,7 +690,6 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             }
         )
 
-        # Reset episode arrays
         self.episode_language_rewards = []
         self.episode_similarities = []
         self.episode_success_rates = []
@@ -639,9 +712,8 @@ class EnhancedMotionLanguageAgent:
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
         motion_model_config: Optional[str] = None,
         motion_checkpoint: Optional[str] = None,
-        use_stability_focus: bool = True,  # NEW
+        use_stability_focus: bool = True,
     ):
-        # If it's humanoid-like, try to upgrade to the stable env id (if module is present)
         if "humanoid" in env_name.lower():
             try:
                 ensure_wrapped_humanoid_registered()
@@ -658,7 +730,6 @@ class EnhancedMotionLanguageAgent:
         print(f"Device: {device}")
         print(f"Stability focus: {use_stability_focus}")
 
-        # Motion tokenizer (language+motion encoders)
         print("Loading MotionGPT tokenizer...")
         self.motion_tokenizer = MotionTokenizer(
             model_config_path=motion_model_config,
@@ -666,29 +737,25 @@ class EnhancedMotionLanguageAgent:
             device=device,
         )
 
-        # Quick base env check
         self.test_environment_creation()
 
-        # RL agent
         self.rl_agent: Optional[Union[PPO, SAC]] = None
 
-        # PPO configuration — stability friendly
         self.training_config = {
-            "learning_rate": 1e-4,
-            "n_steps": 4096,
-            "batch_size": 128,
+            "learning_rate": 3e-5,
+            "n_steps": 2048,
+            "batch_size": 64,
             "n_epochs": 10,
             "gamma": 0.99,
             "gae_lambda": 0.95,
             "clip_range": 0.1,
-            "ent_coef": 0.005,
+            "ent_coef": 0.02,
             "vf_coef": 0.5,
-            "max_grad_norm": 0.3,
-            "target_kl": 0.03,
-            "log_std_init": -1.0,  # smaller initial std for PPO policy
+            "max_grad_norm": 0.5,
+            "target_kl": 0.015,
+            "log_std_init": -0.2,
         }
 
-        # VecNormalize settings
         self.use_vecnormalize = False
         self.vecnormalize_config = {
             "training": True,
@@ -701,7 +768,6 @@ class EnhancedMotionLanguageAgent:
 
         print("Motion-Language Agent initialized successfully")
 
-    # ---------------------------- Env helpers ----------------------------- #
     def test_environment_creation(self):
         """Try main env; if it fails, fall back to simpler MuJoCo envs."""
         try:
@@ -731,8 +797,7 @@ class EnhancedMotionLanguageAgent:
         video_path: Optional[str] = None,
         render_mode: Optional[str] = None,
     ) -> gym.Env:
-        """Factory for a single wrapped env (with stability focus)."""
-        # If humanoid, ensure registration (for subprocesses too)
+        """Factory for a single wrapped env."""
         if "humanoid" in self.env_name.lower():
             ensure_wrapped_humanoid_registered()
 
@@ -740,16 +805,12 @@ class EnhancedMotionLanguageAgent:
         if render_mode is not None:
             env_kwargs["render_mode"] = render_mode
 
-        # Slightly safer default params if supported
         if self.use_stability_focus and "Humanoid" in self.env_name:
-            env_kwargs.update({
-                'reset_noise_scale': 0.01,  # Some MuJoCo envs accept this; ignore if not
-            })
+            env_kwargs.update({'reset_noise_scale': 0.01})
 
         try:
             env = gym.make(self.env_name, **env_kwargs)
         except TypeError:
-            # Fallback if kwargs not supported
             env = gym.make(self.env_name)
 
         env = Monitor(env)
@@ -776,7 +837,7 @@ class EnhancedMotionLanguageAgent:
         record_video: bool = False,
         video_path: Optional[str] = None,
     ) -> VecEnv:
-        """Create vectorized environment for training with stability improvements."""
+        """Create vectorized environment for training."""
 
         def make_env() -> Callable[[], gym.Env]:
             return lambda: self.make_single_env(
@@ -787,7 +848,6 @@ class EnhancedMotionLanguageAgent:
                 render_mode=("rgb_array" if record_video else None),
             )
 
-        # On Windows, prefer DummyVecEnv to avoid spawn/registration problems
         if os.name == "nt":
             venv = DummyVecEnv([make_env() for _ in range(n_envs)])
         else:
@@ -796,13 +856,11 @@ class EnhancedMotionLanguageAgent:
             else:
                 venv = SubprocVecEnv([make_env() for _ in range(n_envs)])
 
-        # Optional normalization
         if self.use_vecnormalize:
             venv = VecNormalize(venv, **self.vecnormalize_config)
 
         return venv
 
-    # ------------------------------ Training ------------------------------ #
     def train_on_instruction(
         self,
         instruction: str = "walk forward",
@@ -814,11 +872,9 @@ class EnhancedMotionLanguageAgent:
         verbose: int = 1,
         record_training_videos: bool = False,
         use_vecnormalize: bool = False,
+        custom_callbacks: list = None,
     ) -> str:
-        """
-        Train PPO on an instruction with stability enhancements.
-        Saves model zip and vecnormalize.pkl (if used) into save_path.
-        """
+        """Train PPO on an instruction with stability enhancements."""
         print(f"Training on instruction: '{instruction}' with stability enhancements")
         print(f"Language reward weight: {language_reward_weight}")
         print(f"Parallel environments: {n_envs}")
@@ -827,10 +883,8 @@ class EnhancedMotionLanguageAgent:
         Path(save_path).mkdir(parents=True, exist_ok=True)
         video_path = f"{save_path}/training_videos" if record_training_videos else None
 
-        # Override vecnormalize setting
         self.use_vecnormalize = use_vecnormalize
 
-        # Build env(s)
         raw_env = self.create_training_environment(
             instruction=instruction,
             language_reward_weight=language_reward_weight,
@@ -842,7 +896,6 @@ class EnhancedMotionLanguageAgent:
 
         env: VecEnv = raw_env
 
-        # PPO agent with stability-focused configuration
         policy_kwargs = dict(log_std_init=self.training_config["log_std_init"])
         self.rl_agent = PPO(
             "MlpPolicy",
@@ -864,7 +917,6 @@ class EnhancedMotionLanguageAgent:
             tensorboard_log="./logs/",
         )
 
-        # Callbacks
         checkpoint_callback = CheckpointCallback(
             save_freq=max(1, eval_freq // max(1, n_envs)),
             save_path=save_path,
@@ -885,21 +937,24 @@ class EnhancedMotionLanguageAgent:
             n_eval_episodes=5,
         )
 
-        # Train
         print(f"Starting training for {total_timesteps} timesteps...")
         print("Using DIRECT motion-language learning with stability enhancements")
 
+        callbacks = [checkpoint_callback, eval_callback]
+        if custom_callbacks:
+            callbacks.extend(custom_callbacks)
+
         start_time = time.time()
         self.rl_agent.learn(
-            total_timesteps=total_timesteps, callback=[checkpoint_callback, eval_callback], progress_bar=True
+            total_timesteps=total_timesteps,
+            callback=callbacks,
+            progress_bar=True
         )
         training_time = time.time() - start_time
 
-        # Save final model
         final_path = f"{save_path}/final_model_{instruction.replace(' ', '_')}.zip"
         self.rl_agent.save(final_path)
 
-        # Save VecNormalize stats if used
         if use_vecnormalize and isinstance(env, VecNormalize):
             env.save(os.path.join(save_path, "vecnormalize.pkl"))
             print(f"Saved VecNormalize stats to: {os.path.join(save_path, 'vecnormalize.pkl')}")
@@ -907,7 +962,6 @@ class EnhancedMotionLanguageAgent:
         print(f"Training completed in {training_time:.2f} seconds!")
         print(f"Final model saved to: {final_path}")
 
-        # Close envs
         try:
             env.close()
         except Exception:
@@ -919,7 +973,6 @@ class EnhancedMotionLanguageAgent:
 
         return final_path
 
-    # Convenience: always enable stability focus for this run
     def train_on_instruction_stable(
         self,
         instruction: str = "walk forward",
@@ -937,7 +990,6 @@ class EnhancedMotionLanguageAgent:
         finally:
             self.use_stability_focus = original_stability
 
-    # ------------------------------ Evaluation --------------------------- #
     @staticmethod
     def find_vecnormalize_stats(model_path: Union[str, Path]) -> Optional[Path]:
         """Search for vecnormalize.pkl near the model zip."""
@@ -954,18 +1006,18 @@ class EnhancedMotionLanguageAgent:
 
     @staticmethod
     def underlying_gym_env(venv: Union[VecEnv, VecNormalize]) -> gym.Env:
-        """Return underlying base env for rendering (Dummy/Subproc -> Monitor -> Wrapper)."""
+        """Return underlying base env for rendering."""
         try:
             if isinstance(venv, VecNormalize):
-                base = venv.venv  # VecEnv
+                base = venv.venv
                 return base.envs[0]
             return venv.envs[0]
         except Exception:
-            return venv  # best effort
+            return venv
 
     def run_evaluation(self, instruction, language_reward_weight, num_episodes,
                        render, deterministic, record_video, video_path, model_path=None):
-        """Common evaluation logic for both PPO and SAC"""
+        """Common evaluation logic"""
         render_mode = "human" if render else "rgb_array" if record_video else None
         venv: VecEnv = DummyVecEnv(
             [
@@ -979,7 +1031,6 @@ class EnhancedMotionLanguageAgent:
             ]
         )
 
-        # Try to load normalization stats
         if model_path:
             stats_path = self.find_vecnormalize_stats(model_path)
             if stats_path and stats_path.exists():
@@ -991,10 +1042,8 @@ class EnhancedMotionLanguageAgent:
                 except Exception as e:
                     print(f"Failed to load VecNormalize: {e}")
 
-        # Make sure policy is in eval mode
         self.rl_agent.policy.eval()
 
-        # Run evaluation episodes
         episode_results = []
         total_success_count = 0
 
@@ -1066,7 +1115,6 @@ class EnhancedMotionLanguageAgent:
         except Exception:
             pass
 
-        # Compute results
         results = {
             "instruction": instruction,
             "num_episodes": num_episodes,
@@ -1125,13 +1173,9 @@ class EnhancedMotionLanguageAgent:
         record_video: bool = False,
         video_path: Optional[str] = None,
     ) -> dict:
-        """
-        Vectorized evaluation with stability metrics.
-        Records videos from the underlying env if requested.
-        """
+        """Vectorized evaluation with stability metrics."""
         print(f"Evaluating on instruction: '{instruction}' with stability tracking")
 
-        # Load PPO if provided
         if model_path and Path(model_path).exists():
             dummy_env = DummyVecEnv(
                 [
@@ -1158,13 +1202,9 @@ class EnhancedMotionLanguageAgent:
         )
 
 
-# Backward compatibility alias
 MotionLanguageAgent = EnhancedMotionLanguageAgent
 
 
-# ==========================================================================#
-#                         Quick Smoke Test (Enhanced)                      #
-# ==========================================================================#
 def test_enhanced_agent_with_stability():
     """Quick end-to-end smoke test with stability features."""
     print("Testing Enhanced Motion-Language Agent with Stability")
@@ -1172,7 +1212,6 @@ def test_enhanced_agent_with_stability():
 
     agent = EnhancedMotionLanguageAgent("Humanoid-v4", use_stability_focus=True)
 
-    # 1) Quick training (very short) to ensure pipeline works
     print("\n1. Quick training test with stability...")
     model_path = agent.train_on_instruction_stable(
         instruction="walk forward",
@@ -1185,7 +1224,6 @@ def test_enhanced_agent_with_stability():
         eval_freq=2000,
     )
 
-    # 2) Evaluation with stability metrics
     print("\n2. Enhanced evaluation test with stability metrics...")
     results = agent.evaluate_instruction(
         instruction="walk forward",

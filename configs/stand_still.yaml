@@ -1,0 +1,28 @@
+experiment:
+  name: 'stand_still_training'
+  seed: 42
+
+environment:
+  name: 'Humanoid-v4'
+  max_episode_steps: 1000
+
+training:
+  total_timesteps_per_instruction: 30000
+  language_reward_weights: [0.2]
+  n_parallel_envs: 2
+  eval_freq: 5000
+  checkpoint_freq: 5000
+
+instructions:
+  basic:
+    - 'stand still'
+    - 'stop moving'
+
+evaluation:
+  n_eval_episodes: 5
+  eval_deterministic: true
+  record_videos: false
+
+motion_gpt:
+  config_path: null
+  checkpoint_path: null

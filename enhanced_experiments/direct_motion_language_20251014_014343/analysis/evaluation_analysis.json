@@ -1,0 +1,177 @@
+{
+  "instruction_difficulty": {
+    "walk forward": {
+      "mean_similarity": 0.6633923292332639,
+      "std_similarity": 0.0011474632866864828,
+      "mean_success_rate": 1.0,
+      "mean_motion_quality": 0.7426088692189627,
+      "mean_reward": 1275.7998231561096,
+      "difficulty_rank": 7
+    },
+    "walk backward": {
+      "mean_similarity": 0.6614946923594855,
+      "std_similarity": 0.0010713644995778782,
+      "mean_success_rate": 1.0,
+      "mean_motion_quality": 0.7441442702829817,
+      "mean_reward": 584.04126726698,
+      "difficulty_rank": 6
+    },
+    "turn left": {
+      "mean_similarity": 0.6672877783308837,
+      "std_similarity": 0.0010571360624704116,
+      "mean_success_rate": 1.0,
+      "mean_motion_quality": 0.7417806669246434,
+      "mean_reward": 431.45431522638705,
+      "difficulty_rank": 9
+    },
+    "turn right": {
+      "mean_similarity": 0.6573983751764025,
+      "std_similarity": 0.0012324771675838867,
+      "mean_success_rate": 1.0,
+      "mean_motion_quality": 0.7360515442295883,
+      "mean_reward": 399.19138782609394,
+      "difficulty_rank": 5
+    },
+    "stop moving": {
+      "mean_similarity": 0.641292705253329,
+      "std_similarity": 0.0015834895863508387,
+      "mean_success_rate": 0.0,
+      "mean_motion_quality": 0.7411469826543784,
+      "mean_reward": 336.8630091879102,
+      "difficulty_rank": 1
+    },
+    "walk stably": {
+      "mean_similarity": 0.664244093760541,
+      "std_similarity": 0.0013823660134295655,
+      "mean_success_rate": 1.0,
+      "mean_motion_quality": 0.7352216072459237,
+      "mean_reward": 390.437525206142,
+      "difficulty_rank": 8
+    },
+    "walk but not fall": {
+      "mean_similarity": 0.6571565259587318,
+      "std_similarity": 0.0010545954069754045,
+      "mean_success_rate": 1.0,
+      "mean_motion_quality": 0.7419892521715916,
+      "mean_reward": 381.697409413479,
+      "difficulty_rank": 4
+    },
+    "move forward slowly": {
+      "mean_similarity": 0.6437152339725662,
+      "std_similarity": 0.0016500722666979415,
+      "mean_success_rate": 1.0,
+      "mean_motion_quality": 0.7398140856914168,
+      "mean_reward": 1325.9870799824043,
+      "difficulty_rank": 3
+    },
+    "keep your balance": {
+      "mean_similarity": 0.6322016136923316,
+      "std_similarity": 0.0009612889439359403,
+      "mean_success_rate": 1.0,
+      "mean_motion_quality": 0.7405885102135887,
+      "mean_reward": 385.4965714039626,
+      "difficulty_rank": 2
+    }
+  },
+  "model_generalization": {
+    "walk forward": {
+      "mean_similarity": 0.6551001043155474,
+      "std_similarity": 0.011626329602476072,
+      "mean_success_rate": 0.8888888888888888,
+      "mean_motion_quality": 0.748360819388864,
+      "mean_reward": 631.3075076970789,
+      "consistency": 0.98850728845003
+    },
+    "walk backward": {
+      "mean_similarity": 0.653900887584492,
+      "std_similarity": 0.011175356565213788,
+      "mean_success_rate": 0.8888888888888888,
+      "mean_motion_quality": 0.739451166417179,
+      "mean_reward": 586.1632043542686,
+      "consistency": 0.9889481517793566
+    },
+    "turn left": {
+      "mean_similarity": 0.6541452554071093,
+      "std_similarity": 0.011394851349315241,
+      "mean_success_rate": 0.8888888888888888,
+      "mean_motion_quality": 0.7447821253600195,
+      "mean_reward": 606.8216927206074,
+      "consistency": 0.9887335284195751
+    },
+    "turn right": {
+      "mean_similarity": 0.6553264745979861,
+      "std_similarity": 0.01133613540453332,
+      "mean_success_rate": 0.8888888888888888,
+      "mean_motion_quality": 0.7533302937742989,
+      "mean_reward": 666.4398645537872,
+      "consistency": 0.9887909321068619
+    },
+    "stop moving": {
+      "mean_similarity": 0.6540034706763751,
+      "std_similarity": 0.011620909003973558,
+      "mean_success_rate": 0.8888888888888888,
+      "mean_motion_quality": 0.7392004117763813,
+      "mean_reward": 627.0852702745685,
+      "consistency": 0.9885125851981298
+    },
+    "walk stably": {
+      "mean_similarity": 0.6532876133000711,
+      "std_similarity": 0.0116106684136312,
+      "mean_success_rate": 0.8888888888888888,
+      "mean_motion_quality": 0.7293563427974411,
+      "mean_reward": 591.9706896135101,
+      "consistency": 0.9885225919653076
+    },
+    "walk but not fall": {
+      "mean_similarity": 0.6537416216987173,
+      "std_similarity": 0.011610482141809115,
+      "mean_success_rate": 0.8888888888888888,
+      "mean_motion_quality": 0.7395981231204601,
+      "mean_reward": 602.4130152508064,
+      "consistency": 0.9885227739858655
+    },
+    "move forward slowly": {
+      "mean_similarity": 0.6546404024879627,
+      "std_similarity": 0.011800301424938339,
+      "mean_success_rate": 0.8888888888888888,
+      "mean_motion_quality": 0.7358141951127241,
+      "mean_reward": 594.7970681074594,
+      "consistency": 0.9883373216944887
+    },
+    "keep your balance": {
+      "mean_similarity": 0.6540375176692739,
+      "std_similarity": 0.011739011954518373,
+      "mean_success_rate": 0.8888888888888888,
+      "mean_motion_quality": 0.733452310885707,
+      "mean_reward": 603.9700760973824,
+      "consistency": 0.9883971935293465
+    }
+  },
+  "cross_task_transfer": {},
+  "best_performers": {
+    "highest_similarity": "turn right",
+    "highest_success_rate": "walk forward",
+    "highest_motion_quality": "turn right",
+    "most_consistent": "walk backward",
+    "summary": {
+      "best_similarity_score": 0.6553264745979861,
+      "best_success_rate_score": 0.8888888888888888,
+      "best_quality_score": 0.7533302937742989,
+      "best_consistency_score": 0.9889481517793566
+    }
+  },
+  "success_rate_analysis": {
+    "overall_mean_success_rate": 0.8888888888888888,
+    "overall_std_success_rate": 0.3142696805273545,
+    "high_success_tasks": 72,
+    "medium_success_tasks": 0,
+    "low_success_tasks": 9
+  },
+  "motion_quality_analysis": {
+    "overall_mean_quality": 0.740371754292564,
+    "overall_std_quality": 0.01140121843862799,
+    "high_quality_episodes": 81,
+    "medium_quality_episodes": 0,
+    "low_quality_episodes": 0
+  }
+}

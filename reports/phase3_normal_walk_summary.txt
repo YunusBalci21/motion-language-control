@@ -1,0 +1,22 @@
+PHASE: phase3_normal_walk
+Instruction: walk forward
+============================================================
+
+Mean Total Reward:      3488.68
+Mean Language Reward:   147.18
+Mean Env Reward:        1327.99
+Mean Episode Length:    205 steps
+Success Rate:           100.0%
+Mean Falls per Episode: 1.50
+
+Episode Rewards:
+  Episode 1: 3608.54
+  Episode 2: 3438.46
+  Episode 3: 3349.40
+  Episode 4: 3581.10
+  Episode 5: 3734.07
+  Episode 6: 3515.40
+  Episode 7: 3309.81
+  Episode 8: 3465.63
+  Episode 9: 3308.15
+  Episode 10: 3576.27

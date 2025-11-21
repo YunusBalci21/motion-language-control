@@ -37,7 +37,7 @@ class EnhancedInteractiveDemo:
         model_path: str,
         env_name: str = "Humanoid-v4",
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
-        output_dir: str = "./demo_outputs",
+        output_dir: str = "./demo_outputs_old",
     ):
         self.model_path = Path(model_path)
         self.env_name = env_name
@@ -663,7 +663,7 @@ def main():
     parser.add_argument("--model-path", type=str, required=True, help="Path to trained model (.zip file)")
     parser.add_argument("--env", type=str, default="Humanoid-v4", help="MuJoCo environment name")
     parser.add_argument("--device", type=str, default="auto", help="Device (cuda/cpu/auto)")
-    parser.add_argument("--output-dir", type=str, default="./demo_outputs", help="Output directory for videos and results")
+    parser.add_argument("--output-dir", type=str, default="./demo_outputs_old", help="Output directory for videos and results")
 
     # Demo modes
     parser.add_argument("--interactive", action="store_true", help="Run interactive demo with user input")

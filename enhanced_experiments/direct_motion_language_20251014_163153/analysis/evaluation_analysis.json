@@ -1,0 +1,65 @@
+{
+  "instruction_difficulty": {
+    "stand still": {
+      "mean_similarity": 0.6537626988827651,
+      "std_similarity": 0.00015452898480017296,
+      "mean_success_rate": 0.0,
+      "mean_motion_quality": 0.7383878279320542,
+      "mean_reward": -21475.513816452025,
+      "difficulty_rank": 2
+    },
+    "stop moving": {
+      "mean_similarity": 0.6428840494228609,
+      "std_similarity": 0.001274883870149457,
+      "mean_success_rate": 0.0,
+      "mean_motion_quality": 0.7439949642984252,
+      "mean_reward": -22320.706076431277,
+      "difficulty_rank": 1
+    }
+  },
+  "model_generalization": {
+    "stand still": {
+      "mean_similarity": 0.6477631967101383,
+      "std_similarity": 0.006154031157426909,
+      "mean_success_rate": 0.0,
+      "mean_motion_quality": 0.7483507860121115,
+      "mean_reward": -20359.8768119812,
+      "consistency": 0.9938836093015027
+    },
+    "stop moving": {
+      "mean_similarity": 0.6488835515954876,
+      "std_similarity": 0.004724618302477279,
+      "mean_success_rate": 0.0,
+      "mean_motion_quality": 0.7340320062183678,
+      "mean_reward": -23436.3430809021,
+      "consistency": 0.9952975987485411
+    }
+  },
+  "cross_task_transfer": {},
+  "best_performers": {
+    "highest_similarity": "stop moving",
+    "highest_success_rate": "stand still",
+    "highest_motion_quality": "stand still",
+    "most_consistent": "stop moving",
+    "summary": {
+      "best_similarity_score": 0.6488835515954876,
+      "best_success_rate_score": 0.0,
+      "best_quality_score": 0.7483507860121115,
+      "best_consistency_score": 0.9952975987485411
+    }
+  },
+  "success_rate_analysis": {
+    "overall_mean_success_rate": 0.0,
+    "overall_std_success_rate": 0.0,
+    "high_success_tasks": 0,
+    "medium_success_tasks": 0,
+    "low_success_tasks": 4
+  },
+  "motion_quality_analysis": {
+    "overall_mean_quality": 0.7411913961152397,
+    "overall_std_quality": 0.01414287623089826,
+    "high_quality_episodes": 4,
+    "medium_quality_episodes": 0,
+    "low_quality_episodes": 0
+  }
+}

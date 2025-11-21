@@ -131,9 +131,9 @@ class HumanoidShaping(gym.Wrapper):
     2) Phase 2: walk towards a target speed that ramps up.
     """
     def __init__(self, env: gym.Env,
-                 stand_steps: int = 10000,
-                 target_speed: float = 1.2,
-                 speed_ramp_steps: int = 20000):
+                 stand_steps: int = 20000,
+                 target_speed: float = 0.5,
+                 speed_ramp_steps: int = 40000):
         super().__init__(env)
         self.total_steps = 0
         self.stand_steps = stand_steps

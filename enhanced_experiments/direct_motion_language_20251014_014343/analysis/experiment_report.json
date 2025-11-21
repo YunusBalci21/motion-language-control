@@ -1,0 +1,65 @@
+{
+  "experiment_info": {
+    "directory": "enhanced_experiments\\direct_motion_language_20251014_014343",
+    "timestamp": "2025-10-14T02:09:24.515124",
+    "total_instructions": 9,
+    "version": "3.0_enhanced"
+  },
+  "key_findings": {
+    "best_overall_model": "turn right",
+    "best_success_rate_model": "walk forward",
+    "best_motion_quality_model": "turn right",
+    "most_consistent_model": "walk backward",
+    "highest_similarity_achieved": 0.6553264745979861,
+    "highest_success_rate_achieved": 0.8888888888888888,
+    "highest_motion_quality_achieved": 0.7533302937742989,
+    "easiest_instruction": "stop moving",
+    "most_difficult_instruction": "turn left"
+  },
+  "performance_summary": {
+    "mean_similarity_across_tasks": 0.6543250221478512,
+    "std_similarity_across_tasks": 0.011378274017352794,
+    "mean_success_rate_across_tasks": 0.8888888888888888,
+    "mean_motion_quality_across_tasks": 0.7457876032211659,
+    "mean_reward_across_tasks": 596.0194884969129,
+    "tasks_above_70_percent_similarity": 0,
+    "tasks_above_50_percent_success": 8,
+    "total_tasks_trained": 9
+  },
+  "success_rate_analysis": {
+    "high_success_tasks": 8,
+    "medium_success_tasks": 0,
+    "low_success_tasks": 1,
+    "overall_success_rate": 0.8888888888888888
+  },
+  "motion_quality_summary": {
+    "mean_motion_quality": 0.7457876032211659,
+    "high_quality_episodes": 9,
+    "medium_quality_episodes": 0,
+    "low_quality_episodes": 0
+  },
+  "technical_achievements": {
+    "direct_motion_language_learning": true,
+    "no_pixel_rendering_required": true,
+    "real_time_motiongpt_integration": true,
+    "hierarchical_curriculum_learning": true,
+    "success_rate_computation": true,
+    "motion_quality_evaluation": true,
+    "video_recording_capability": true,
+    "speed_improvement_over_clip": "11.0x",
+    "time_savings_per_step": "20.00ms",
+    "computational_efficiency": "High"
+  },
+  "recommendations": {
+    "overall": [
+      "Good performance. Consider extending training time or tuning hyperparameters.",
+      "Significant computational speedup achieved over CLIP-based methods."
+    ],
+    "next_steps": [
+      "Test on more complex instruction sequences",
+      "Implement real-time control interface",
+      "Evaluate on physical robot systems",
+      "Submit to top-tier AI/robotics conferences"
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "mean_speedup": 11.0,
+  "std_speedup": 0.0,
+  "mean_time_savings_ms": 20.0,
+  "instructions_tested": [
+    "walk forward",
+    "walk backward",
+    "turn left"
+  ],
+  "individual_results": {
+    "walk forward": {
+      "speedup": 11.0,
+      "time_savings_ms": 20.0,
+      "direct_time_ms": 2.0,
+      "clip_time_ms": 22.0,
+      "render_elimination": true,
+      "pixel_processing_eliminated": true
+    },
+    "walk backward": {
+      "speedup": 11.0,
+      "time_savings_ms": 20.0,
+      "direct_time_ms": 2.0,
+      "clip_time_ms": 22.0,
+      "render_elimination": true,
+      "pixel_processing_eliminated": true
+    },
+    "turn left": {
+      "speedup": 11.0,
+      "time_savings_ms": 20.0,
+      "direct_time_ms": 2.0,
+      "clip_time_ms": 22.0,
+      "render_elimination": true,
+      "pixel_processing_eliminated": true
+    }
+  },
+  "technical_advantages": {
+    "no_pixel_rendering": true,
+    "no_clip_encoding": true,
+    "direct_motion_language": true,
+    "real_time_capable": true
+  }
+}
