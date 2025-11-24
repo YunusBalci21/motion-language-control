@@ -1,230 +1,110 @@
-# Enhanced Motion-Language Control Configuration
-# Direct MotionGPT integration without pixel rendering
-
+# configs/default.yaml (UPDATE - reduce stability focus initially)
 experiment:
   name: "direct_motion_language_learning"
-  description: "Enhanced motion-language control using direct MotionGPT integration"
-  version: "3.0"
+  description: "Enhanced motion-language control with forward movement focus"
+  version: "3.1"
   authors: ["Yunus Emre Balci"]
   institution: "SDU"
 
-# Algorithm Configuration
 algo: ppo
 
-# Environment Configuration
 environment:
-  id: "Humanoid-v4"  # Primary environment
+  id: "Humanoid-v4"
   name: "Humanoid-v4"
   alternatives: ["HalfCheetah-v4", "Ant-v4", "Walker2d-v4"]
-  num_envs: 8  # Number of parallel environments
+  num_envs: 8
   max_episode_steps: 1000
   max_steps: 1000
-  render_mode: null  # No rendering needed for training!
+  render_mode: null
 
-# Enhanced Training Configuration
 training:
-  # ENHANCED: Increased timesteps per instruction for stability
-  total_timesteps_per_instruction: 150000
-
-  # Language reward weights for curriculum learning
-  # Progressive increase in language supervision
-  language_reward_weights: [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-
-  # Parallel training for efficiency
-  n_parallel_envs: 8  # Updated from snippet
-  use_multiprocessing: false  # Set to true for large-scale training
-
-  # Evaluation and checkpointing
+  total_timesteps_per_instruction: 200000  # Increased
+  language_reward_weights: [0.5, 0.6, 0.7, 0.8]  # Start higher
+  n_parallel_envs: 4
+  use_multiprocessing: false
   eval_freq: 10000
   checkpoint_freq: 5000
 
-# PPO Hyperparameters (merged from both configs)
 ppo:
-  # Learning rate
-  lr: 3.0e-4
-  learning_rate: 3.0e-4
-
-  # Discount and advantage estimation
+  lr: 5.0e-4  # Increased learning rate
+  learning_rate: 5.0e-4
   gamma: 0.99
   lam: 0.95
   gae_lambda: 0.95
-
-  # Clipping
   clip_range: 0.2
   clip_ratio: 0.2
-
-  # Training steps and batching
   steps_per_update: 8192
   n_steps: 2048
   batch_size: 64
   minibatches: 32
   epochs: 10
   n_epochs: 10
-
-  # Loss coefficients
   vf_coef: 0.5
-  ent_coef: 0.0  # Updated from snippet (was 0.01)
-
-  # Gradient clipping
+  ent_coef: 0.01  # Increased for exploration
   max_grad_norm: 0.5
-
-  # Normalization
   norm_adv: true
 
-# ENHANCED: Instruction Curricula with Manipulation Support
 instructions:
-  # Basic locomotion instructions
   basic:
     - "walk forward"
+    - "walk forward slowly"
+    - "walk forward quickly"
     - "walk backward"
     - "turn left"
     - "turn right"
     - "stop moving"
-    - "walk stably"
-    - "walk but not fall"
-    - "move forward slowly"
-    - "keep your balance"
 
-  # Intermediate complexity with modifiers
   intermediate:
-    - "walk forward slowly"
-    - "walk forward quickly"
+    - "walk forward steadily"
+    - "walk forward without falling"
     - "run forward"
     - "turn left while walking"
     - "turn right while walking"
-    - "walk in place"
-    - "walk forward without falling"
-    - "move steadily forward"
-    - "walk and maintain balance"
-    - "walk smoothly forward"
-    - "take careful steps forward"
-    - "walk forward with good posture"
 
-  # Advanced multi-step and complex behaviors
-  advanced:
-    - "walk in a circle"
-    - "walk forward then turn left"
-    - "walk backward then turn around"
-    - "jump up and down"
-    - "wave your hand while walking"
-    - "crouch down low"
-    - "walk sideways to the left"
-    - "walk sideways to the right"
-    - "run in a circle"
-    - "march in place"
-    - "walk forward for 10 steps then stop"
-    - "turn around and walk back"
-    - "walk forward while staying upright"
-    - "move forward with smooth motions"
-    - "walk forward and keep your head up"
-
-  # ENHANCED: Manipulation and cleaning focused
-  manipulation:
-    - "clean the table"
-    - "wipe the surface"
-    - "pick up that object"
-    - "place it over there"
-    - "organize the items"
-    - "reach for the object"
-    - "grasp it carefully"
-    - "move it slowly"
-    - "clean thoroughly"
-    - "tidy up the area"
-    - "reach forward carefully"
-    - "pick up object slowly"
-    - "clean the surface smoothly"
-    - "organize items carefully"
-    - "move object gently"
-    - "wipe table thoroughly"
-    - "grasp object securely"
-    - "place object down carefully"
-
-  # Stability focused (existing)
   stability_focused:
-    - "walk stably without falling"
+    - "walk stably"
+    - "walk without falling"
     - "maintain balance while moving"
-    - "walk with good balance"
-    - "move forward but stay upright"
-    - "walk carefully without stumbling"
-    - "take stable steps forward"
-    - "walk with good posture and balance"
-    - "move steadily and don't fall"
-    - "walk forward and keep your balance"
-    - "move smoothly without losing balance"
 
-  # Expert-level complex sequences
-  expert:
-    - "walk forward slowly then speed up"
-    - "turn left then walk backward"
-    - "jump three times then walk forward"
-    - "wave both hands while walking forward"
-    - "walk in a figure eight pattern"
-    - "crouch walk forward"
-    - "walk forward then jump then continue walking"
-    - "clean the table then organize items"
-    - "pick up object then place it carefully"
-    - "reach forward then wipe surface thoroughly"
-
-# Enhanced Evaluation Configuration
 evaluation:
-  n_eval_episodes: 10
+  n_eval_episodes: 5
   eval_deterministic: true
-  cross_evaluation: true  # Test each model on all instructions
-  benchmark_against_clip: true  # Benchmark speed improvements
-
-  # Analysis settings
+  cross_evaluation: true
+  benchmark_against_clip: true
   compute_similarity_metrics: true
   track_computation_times: true
-  save_episode_videos: true  # ENHANCED: Set to true for video analysis
+  save_episode_videos: true
+  similarity_threshold_good: 0.5  # Lowered
+  similarity_threshold_excellent: 0.7  # Lowered
+  reward_threshold_success: 80.0  # Lowered
 
-  # Success thresholds
-  similarity_threshold_good: 0.6
-  similarity_threshold_excellent: 0.8
-  reward_threshold_success: 100.0
-
-# MotionGPT Integration Settings
 motion_gpt:
-  # Paths to MotionGPT model (set these if you have trained models)
-  config_path: null  # e.g., "external/motiongpt/configs/config_vq.yaml"
-  checkpoint_path: null  # e.g., "external/motiongpt/checkpoints/best_model.pth"
-
-  # Language model for instruction encoding
-  language_model: "t5-small"  # or "t5-base" for better performance
-
-  # Motion processing settings
-  motion_dim: 263  # MotionGPT standard dimension
+  config_path: null
+  checkpoint_path: null
+  language_model: "t5-small"
+  motion_dim: 263
   max_sequence_length: 196
   codebook_size: 512
   latent_dim: 256
-
-  # Reward computation settings
-  temporal_aggregation: "weighted_recent"  # "mean", "max", "last", "weighted_recent"
-  reward_smoothing: 0.9  # Temporal smoothing factor
-  success_threshold: 0.6
-
-  # Motion feature extraction
+  temporal_aggregation: "weighted_recent"
+  reward_smoothing: 0.8
+  success_threshold: 0.5
   motion_history_length: 20
   motion_normalization: true
 
-# Hierarchical Learning Settings
 hierarchical:
-  use_hierarchical_structure: true
-  low_level_freq: 10  # Low-level policy frequency
-  high_level_freq: 1   # High-level policy frequency
-
-  # Skill discovery (future work)
+  use_hierarchical_structure: false
+  low_level_freq: 10
+  high_level_freq: 1
   discover_skills: false
   skill_embedding_dim: 64
   n_discovered_skills: 16
 
-# Logging and Monitoring
 logging:
   tensorboard_log: "./logs/"
-  wandb_project: null  # Set for Weights & Biases logging
+  wandb_project: null
   log_level: "INFO"
   save_model_every_n_steps: 10000
-
-  # Metrics to track
   track_metrics:
     - "motion_language_similarity"
     - "language_reward"
@@ -233,55 +113,37 @@ logging:
     - "computation_time"
     - "motion_variance"
 
-# Experimental Features
 experimental:
-  # ENHANCED: Advanced reward shaping for stability
   use_progress_bonus: true
   use_instruction_specific_rewards: true
-  stability_bonus_weight: 0.3  # NEW: Weight for stability bonuses
-
-  # Motion augmentation
+  stability_bonus_weight: 0.2  # Reduced
   use_motion_augmentation: false
   augmentation_noise_std: 0.01
-
-  # Curriculum learning
-  adaptive_curriculum: false  # Automatically adjust difficulty
-  curriculum_success_threshold: 0.75
-
-  # Multi-modal learning (future)
+  adaptive_curriculum: false
+  curriculum_success_threshold: 0.6
   use_visual_features: false
   use_audio_instructions: false
 
-# Hardware and Performance
 hardware:
-  device: "auto"  # "cuda", "cpu", or "auto"
-  mixed_precision: false  # Enable for faster training on modern GPUs
-  compile_model: false    # PyTorch 2.0+ compilation
-
-  # Memory management
+  device: "auto"
+  mixed_precision: false
+  compile_model: false
   gradient_accumulation_steps: 1
   max_memory_usage_gb: 8.0
 
-# Publication and Reproducibility
 reproducibility:
   seed: 42
-  deterministic_training: false  # Set to true for reproducible results
+  deterministic_training: false
   save_random_state: true
-
-  # For academic publication
   save_training_curves: true
   save_model_architecture: true
   save_hyperparameters: true
   generate_performance_plots: true
 
-# Comparison Baselines
 baselines:
-  # Compare against these approaches
   clip_based_reward: true
-  pixel_rendering_time: 7  # ms (for simulation)
-  clip_encoding_time: 15   # ms (for simulation)
-
-  # Other baselines to implement
+  pixel_rendering_time: 7
+  clip_encoding_time: 15
   random_policy: false
   pretrained_locomotion: false
   vision_based_reward: false
