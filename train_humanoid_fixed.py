@@ -1,4 +1,4 @@
-# train_humanoid_fixed_with_motiongpt.py
+# train_humanoid_fixed.py
 from src.agents.hierarchical_agent import EnhancedMotionLanguageAgent
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
@@ -99,7 +99,13 @@ agent.training_config['learning_rate'] = 3e-4  # Moderate LR
 agent.training_config['ent_coef'] = 0.01  # Lower entropy (humanoid is complex enough)
 agent.training_config['n_steps'] = 2048
 agent.training_config['batch_size'] = 64
-agent.training_config['log_std_init'] = 0.0  # Start with moderate exploration
+# ***REMOVED***: agent.training_config['log_std_init'] = 0.0  # This doesn't belong here
+
+# Add policy_kwargs separately for PPO initialization
+agent.policy_kwargs = {
+    'log_std_init': 0.0,  # Start with moderate exploration
+    'ortho_init': False,
+}
 
 print("Training with:")
 print(f"  - MotionGPT checkpoint loaded ✓")
@@ -113,10 +119,10 @@ os.makedirs('./humanoid_fixed', exist_ok=True)
 model = agent.train_on_instruction(
     'walk forward',
     total_timesteps=300000,
-    n_envs=4,
     language_reward_weight=0.90,
-    use_vecnormalize=True,
-    save_path='./humanoid_fixed/'
+    save_path='./humanoid_fixed/',
+    n_envs=4,
+    use_multiprocessing=False
 )
 
 print("\n✅ Humanoid training complete with orientation checks!")

@@ -1,7 +1,6 @@
-# src/agents/hierarchical_agent.py
 """
-Motion-Language Agent - TUNED FOR NATURAL WALKING
-Fixed 'Leaning Forward' behavior by enforcing upright posture.
+Motion-Language Agent - MERGED VERSION WITH COMPREHENSIVE LOGGING
+Combines posture enforcement with detailed step-by-step tracking
 """
 
 import sys
@@ -23,7 +22,6 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 import imageio
 
-# ... [Imports remain the same] ...
 if os.name == "nt":
     os.environ["MUJOCO_GL"] = os.environ.get("MUJOCO_GL", "glfw")
 elif "MUJOCO_GL" not in os.environ:
@@ -46,7 +44,7 @@ except Exception:
 
 
 class DirectMotionLanguageWrapper(gym.Wrapper):
-    """Wrapper with constraints for NATURAL walking (no leaning)"""
+    """Enhanced wrapper with detailed logging and stability checks"""
 
     def __init__(
             self,
@@ -58,7 +56,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             reward_aggregation: str = "weighted_recent",
             record_video: bool = False,
             video_path: Optional[str] = None,
-            stability_focus: bool = True,  # Set default to True
+            stability_focus: bool = True,
     ):
         super().__init__(env)
         self.motion_tokenizer = motion_tokenizer
@@ -69,13 +67,11 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         self.video_path = video_path
         self.stability_focus = stability_focus
 
-        # ... [Init logic remains the same] ...
         self.motion_history: deque = deque(maxlen=motion_history_length)
         self.observation_history: deque = deque(maxlen=motion_history_length)
         self.forward_speed_history: deque = deque(maxlen=motion_history_length)
         self.video_frames: Optional[List[np.ndarray]] = [] if record_video else None
 
-        # ... [Init Mujoco handles] ...
         self.mj_model = None
         self.mj_data = None
         self.dt = 0.02
@@ -83,7 +79,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         self.init_mujoco_handles()
 
         # Rewards
-        self.language_reward_weight = 0.85  # Slightly reduced to allow postural rewards
+        self.language_reward_weight = 0.85
         self.episode_count = 0
         self.total_steps = 0
         self.episode_step_count = 0
@@ -96,9 +92,17 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         self.episode_success_rates = []
         self.success_history = deque(maxlen=100)
 
+        # Get env name
+        self.env_name = getattr(env, 'spec', None)
+        if self.env_name:
+            self.env_name = self.env_name.id
+        else:
+            self.env_name = "Humanoid-v4"
+
         print("DirectMotionLanguageWrapper initialized:")
-        print(f"  Environment: {env.spec.id if hasattr(env, 'spec') else 'Unknown'}")
+        print(f"  Environment: {self.env_name}")
         print(f"  Instruction: '{instruction}'")
+        print("  >> DETAILED LOGGING ENABLED (every 50 steps)")
         print("  >> NATURAL POSTURE ENFORCEMENT: ACTIVE")
 
     def init_mujoco_handles(self) -> None:
@@ -134,41 +138,59 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         except Exception:
             return 1.0
 
-    # --- NEW: POSTURE CHECK ---
     def get_torso_upright_score(self) -> float:
         """
         Returns 1.0 if torso is vertical, 0.0 if horizontal.
-        Calculated from the z-component of the torso quaternion/projection.
         """
         try:
             if self.mj_data is not None:
-                # qpos[3:7] is the root quaternion (w, x, y, z)
-                # We want the z-axis of the body frame to align with global z
-                # Simplified: Check if the projected gravity vector is aligned
-                # Or just check the pitch angle.
-
-                # MuJoCo Humanoid usually has root at index 1 (qpos[2] is z-height)
-                # Rotations are qpos[3:7].
-                # A perfectly upright humanoid has [1, 0, 0, 0] or similar.
-
-                # We can penalize significant pitch (leaning forward/back)
-                # Convert quat to pitch or just penalize deviation from [1,0,0,0]
-
                 quat = self.mj_data.qpos[3:7]
-                # Deviation from upright (1, 0, 0, 0)
-                # Score = w^2 (since w=1 means 0 rotation)
-                # This is a rough heuristic but effective for keeping them upright
                 uprightness = float(quat[0] ** 2)
                 return uprightness
         except Exception:
-            return 1.0  # Assume upright if can't read
+            return 1.0
 
     def check_fallen(self) -> bool:
         height = self.get_height()
-        # Stricter height check - knees shouldn't be scraping the floor
-        if "Humanoid" in self.env_name and height < 1.0:  # Increased from 0.8
+        if "Humanoid" in self.env_name and height < 1.0:
             return True
         return height < 0.3
+
+    def check_stability(self, obs: np.ndarray) -> Tuple[bool, float]:
+        """Comprehensive stability check"""
+        try:
+            height = self.get_height()
+            upright_score = self.get_torso_upright_score()
+            vx = self.get_forward_speed()
+
+            # STRICT checks
+            if height < 1.0:
+                return False, -20.0
+
+            if upright_score < 0.85:
+                return False, -20.0
+
+            if abs(vx) > 2.5:
+                return False, -15.0
+
+            # Compute stability bonus
+            stability_bonus = 0.0
+
+            # Height bonus
+            if height > 1.2:
+                stability_bonus += min(1.0, (height - 1.0) * 0.5)
+
+            # Uprightness bonus
+            if upright_score > 0.85:
+                stability_bonus += max(0.0, (upright_score - 0.8) * 0.5)
+
+            # Velocity bonus (moving but controlled)
+            if 0.1 < abs(vx) < 2.0:
+                stability_bonus += 0.2
+
+            return True, stability_bonus
+        except Exception:
+            return True, 0.0
 
     def extract_motion_features(self, obs: np.ndarray) -> np.ndarray:
         return self.motion_tokenizer.extract_motion_from_obs(obs, self.env_name)
@@ -186,23 +208,81 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
                 motion_tensor, self.current_instruction, temporal_aggregation="mean"
             )
 
-            # We trust MotionGPT more now, but we scale it
             return float(similarity) * self.reward_scale, float(similarity), 0.0, {}
-        except Exception:
+        except Exception as e:
             return self.prev_language_reward, 0.0, 0.0, {}
 
-    def compute_simple_progress_reward(self, vx: float) -> float:
-        # Existing logic...
-        if self.check_fallen(): return -20.0  # Harsher penalty for falling
+    def compute_instruction_progress_bonus(self, vx: float) -> float:
+        """Compute progress bonus based on instruction"""
+        il = self.current_instruction.lower()
+        bonus = 0.0
 
-        # Reward forward velocity but CAP it to walking speed (1.5 m/s)
-        # This prevents the "sprint and fall" strategy
-        if 'forward' in self.current_instruction.lower():
-            if vx > 2.0: return 50.0  # Too fast! Less reward.
-            if vx > 0.5: return 100.0 * vx  # Linear reward up to 2.0
-            if vx > 0.1: return 20.0
+        # Check height first
+        height = self.get_height()
+        if height < 1.0:
+            return -10.0
 
-        return 0.0
+        # Stand still
+        if "stop" in il or "still" in il or "stand" in il:
+            if self.mj_data is not None:
+                qvel = self.mj_data.qvel
+                total_vel = np.linalg.norm(qvel)
+
+                if total_vel < 0.5:
+                    bonus += 10.0
+                elif total_vel < 1.0:
+                    bonus += 5.0
+                else:
+                    bonus -= 5.0
+
+                if abs(vx) > 0.1:
+                    bonus -= 10.0 * abs(vx)
+
+                if len(self.forward_speed_history) >= 10:
+                    recent_speeds = list(self.forward_speed_history)[-10:]
+                    max_speed = max(abs(s) for s in recent_speeds)
+                    if max_speed < 0.05:
+                        bonus += 15.0
+
+                if 1.2 < height < 1.4:
+                    bonus += 3.0
+
+                return bonus * 2.0
+
+        # Forward movement
+        elif "forward" in il:
+            if vx > 2.5:
+                return -5.0
+
+            # Progressive reward for forward velocity
+            if vx > 0.8:
+                bonus += 100.0
+            elif vx > 0.5:
+                bonus += 50.0
+            elif vx > 0.1:
+                bonus += 20.0
+            else:
+                bonus -= 5.0
+
+            # Consistency bonus
+            if len(self.forward_speed_history) >= 10:
+                recent = list(self.forward_speed_history)[-10:]
+                speed_std = np.std(recent)
+                mean_speed = np.mean(recent)
+
+                if speed_std < 0.5 and mean_speed > 0.3:
+                    bonus += 10.0
+
+        # Backward movement
+        elif "backward" in il:
+            if vx < -0.5:
+                bonus += 50.0
+            elif vx < -0.1:
+                bonus += 20.0
+            else:
+                bonus -= 5.0
+
+        return float(bonus)
 
     def step(self, action):
         obs, env_reward, terminated, truncated, info = self.env.step(action)
@@ -218,7 +298,7 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
 
         # --- REWARD CALCULATION ---
 
-        # 1. MotionGPT Alignment (The "Brain")
+        # 1. MotionGPT Alignment
         language_reward = 0.0
         similarity = 0.0
         if len(self.motion_history) >= 20:
@@ -229,58 +309,102 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
             except:
                 pass
 
-        # 2. Progress (The "Goal")
-        progress_reward = self.compute_simple_progress_reward(vx)
+        # 2. Progress bonus
+        progress_bonus = self.compute_instruction_progress_bonus(vx)
 
-        # 3. Posture (The "Style" - CRITICAL FIX)
+        # 3. Stability check
+        is_stable, stability_bonus = self.check_stability(obs)
+        if not is_stable:
+            self.fall_count += 1
+            self.consecutive_stable_steps = 0
+            terminated = True
+        else:
+            self.consecutive_stable_steps += 1
+
+        # 4. Energy penalty
+        energy_penalty = 0.01 * float(np.sum(np.square(action)))
+
+        # 5. Uprightness bonus
         upright_score = self.get_torso_upright_score()
-        # Penalize if upright_score < 0.8 (leaning too much)
-        posture_penalty = 0.0
-        if upright_score < 0.85:
-            posture_penalty = -50.0 * (0.85 - upright_score)  # Strong penalty for leaning
+        height = self.get_height()
 
-        # 4. Energy (Efficiency)
-        energy_penalty = 0.01 * float(np.sum(np.square(action)))  # Increased penalty for jittery movement
+        uprightness_bonus = 0.0
+        if height > 1.2:
+            uprightness_bonus += 1.0
+        if upright_score > 0.9:
+            uprightness_bonus += 1.0
 
         # Total Reward
-        total_language_reward = language_reward + progress_reward + posture_penalty - energy_penalty
+        total_language_reward = (language_reward + progress_bonus +
+                                 stability_bonus + uprightness_bonus - energy_penalty)
 
-        # Mix with env reward (to keep basic physics alive)
         total_reward = (0.1 * env_reward) + (0.9 * total_language_reward)
 
         # Success tracking
-        if self.check_fallen():
-            self.fall_count += 1
-            terminated = True  # Force end episode if too low
-            total_reward -= 100.0  # Big penalty for falling
-
+        self.episode_similarities.append(float(similarity))
         self.episode_language_rewards.append(language_reward)
-        self.episode_similarities.append(similarity)
 
+        # Info dict
         info.update({
             'language_reward': float(language_reward),
-            'progress_reward': float(progress_reward),
-            'posture_penalty': float(posture_penalty),
+            'progress_bonus': float(progress_bonus),
+            'stability_bonus': float(stability_bonus),
+            'uprightness_bonus': float(uprightness_bonus),
+            'energy_penalty': float(energy_penalty),
+            'total_language_reward': float(total_language_reward),
             'total_reward': float(total_reward),
             'motion_language_similarity': float(similarity),
             'vx': float(vx),
-            'upright': float(upright_score)
+            'upright': float(upright_score),
+            'height': float(height),
+            'fall_count': int(self.fall_count),
+            'consecutive_stable_steps': int(self.consecutive_stable_steps),
         })
+
+        # === DETAILED LOGGING (every 50 steps) ===
+        if self.episode_step_count % 50 == 0:
+            print(f"Step {self.episode_step_count}: "
+                  f"vx={vx:.3f}, "
+                  f"lang_r={language_reward:.3f}, "
+                  f"prog={progress_bonus:.1f}, "
+                  f"sim={similarity:.3f}, "
+                  f"stab={stability_bonus:.2f}, "
+                  f"total={total_reward:.1f}, "
+                  f"upright={upright_score:.3f}, "
+                  f"h={height:.2f}")
+
+        # Record video
+        if self.record_video and self.video_frames is not None:
+            try:
+                if hasattr(self.env, 'render'):
+                    frame = self.env.render()
+                    if frame is not None:
+                        self.video_frames.append(frame)
+            except Exception:
+                pass
 
         return obs, float(total_reward), bool(terminated), bool(truncated), info
 
-    # ... [Reset method remains largely same, just ensure history cleared] ...
     def reset(self, **kwargs):
-        # Stats recording...
+        # Episode stats
         if self.episode_language_rewards:
-            # ... (stats logic) ...
-            pass
+            avg_sim = np.mean(self.episode_similarities) if self.episode_similarities else 0.0
+            print(f"\n=== Episode {self.episode_count} Complete ===")
+            print(f"  Length: {self.episode_step_count}")
+            print(f"  Avg Similarity: {avg_sim:.3f}")
+            print(f"  Falls: {self.fall_count}")
+            print(f"  Max Stable Steps: {self.consecutive_stable_steps}")
+            print("=" * 40 + "\n")
 
         self.motion_history.clear()
         obs, info = self.env.reset(**kwargs)
 
         self.episode_step_count = 0
-        self.total_steps += 1
+        self.fall_count = 0
+        self.consecutive_stable_steps = 0
+        self.episode_language_rewards = []
+        self.episode_similarities = []
+        self.episode_count += 1
 
         motion_features = self.extract_motion_features(obs)
         self.motion_history.append(motion_features)
@@ -288,16 +412,14 @@ class DirectMotionLanguageWrapper(gym.Wrapper):
         return obs, info
 
 
-# ... [Agent Class remains same] ...
 class EnhancedMotionLanguageAgent:
     def __init__(self, env_name="Humanoid-v4", device="cuda", motion_checkpoint=None, use_stability_focus=True,
                  motion_model_config=None):
-        # Initialize components
         self.env_name = env_name
         self.device = device
         self.motion_tokenizer = MotionTokenizer(checkpoint_path=motion_checkpoint, device=device)
         self.training_config = {
-            "learning_rate": 3e-4,  # Slightly lower LR for stability
+            "learning_rate": 3e-4,
             "n_steps": 2048,
             "batch_size": 64,
             "n_epochs": 10,
@@ -308,6 +430,7 @@ class EnhancedMotionLanguageAgent:
             "vf_coef": 0.5,
             "max_grad_norm": 0.5,
         }
+        self.policy_kwargs = {}
         self.use_vecnormalize = True
         self.vecnormalize_config = {"training": True, "norm_obs": True, "norm_reward": True, "clip_reward": 10.}
 
@@ -322,19 +445,26 @@ class EnhancedMotionLanguageAgent:
 
     def create_training_environment(self, instruction, language_reward_weight, n_envs=1, record_video=False,
                                     video_path=None, use_multiprocessing=False):
-        # Simple DummyVecEnv creation
         return DummyVecEnv(
             [lambda: self.make_single_env(instruction, language_reward_weight, record_video, video_path)])
 
     def train_on_instruction(self, instruction, total_timesteps, language_reward_weight, save_path, **kwargs):
         print(f"Training on {instruction}...")
-        env = self.create_training_environment(instruction, language_reward_weight, n_envs=4)
+
+        n_envs = kwargs.get('n_envs', 1)
+        env = self.create_training_environment(instruction, language_reward_weight, n_envs=n_envs)
+
         if self.use_vecnormalize:
             env = VecNormalize(env, **self.vecnormalize_config)
 
-        model = PPO("MlpPolicy", env, verbose=1, **self.training_config)
+        model = PPO(
+            "MlpPolicy",
+            env,
+            verbose=1,
+            policy_kwargs=self.policy_kwargs,
+            **self.training_config
+        )
 
-        # Callbacks
         checkpoint_callback = CheckpointCallback(save_freq=20000, save_path=save_path, name_prefix="humanoid_posture")
 
         model.learn(total_timesteps=total_timesteps, callback=[checkpoint_callback], progress_bar=True)
