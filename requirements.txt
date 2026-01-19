@@ -1,102 +1,41 @@
-# Enhanced Motion-Language Control Requirements
-# Core dependencies for direct MotionGPT integration with video recording
+# Motion-Language Control
+# Tested with Python 3.9+
 
-# Deep Learning Framework
+# Deep Learning
 torch>=2.0.0
 torchvision>=0.15.0
-torchaudio>=2.0.0
+accelerate>=0.20.0
+einops>=0.6.0
 
 # Reinforcement Learning
 stable-baselines3>=2.0.0
-gymnasium>=0.28.0
 gymnasium[mujoco]>=0.28.0
 
-# Language Models and NLP
+# MuJoCo Physics
+mujoco>=2.3.0
+
+# NLP / Text Encoding
 transformers>=4.30.0
-tokenizers>=0.13.0
+sentence-transformers>=2.2.0
 sentencepiece>=0.1.99
+huggingface-hub>=0.20.0
+safetensors>=0.4.0
+diffusers>=0.30.0
 
 # Scientific Computing
 numpy>=1.24.0
 scipy>=1.10.0
-pandas>=2.0.0
-scikit-learn>=1.3.0
 
-# Computer Vision and Video Processing
-opencv-python>=4.8.0
-pillow>=10.0.0
-imageio>=2.31.0
-imageio-ffmpeg>=0.4.8
-moviepy>=1.0.3
-
-# Video and Image Processing
-ffmpeg-python>=0.2.0
-av>=10.0.0
-
-# Plotting and Visualization
+# Visualization
 matplotlib>=3.7.0
 seaborn>=0.12.0
-plotly>=5.15.0
-tensorboard>=2.13.0
 
-# Configuration and Data
+# Video / Rendering
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.8
+opencv-python>=4.8.0
+
+# Config & Utilities
 PyYAML>=6.0
-json5>=0.9.0
-h5py>=3.9.0
-omegaconf>=2.3.0
-
-# Progress Bars and Logging
 tqdm>=4.65.0
-wandb>=0.15.0
 rich>=13.4.0
-
-# Parallel Processing and Performance
-multiprocessing-logging>=0.3.4
-psutil>=5.9.0
-memory-profiler>=0.61.0
-
-# Development and Testing
-pytest>=7.4.0
-pytest-cov>=4.1.0
-black>=23.7.0
-flake8>=6.0.0
-
-# MuJoCo Physics Engine
-mujoco>=2.3.0
-
-# Data processing and utilities
-einops>=0.6.1
-pathlib2>=2.3.7
-collections-extended>=2.0.2
-typing-extensions>=4.7.0
-
-
-# Additional Utilities
-hashlib-compat>=1.0.0
-datetime>=4.9
-argparse>=1.4.0
-
-# Optional: Advanced Features
-# optuna>=3.3.0        # For hyperparameter optimization
-# hydra-core>=1.3.0    # For advanced configuration management
-# ray[tune]>=2.7.0     # For distributed training and hyperparameter tuning
-
-# Video codec support
-x264>=0.164
-libx264-dev>=0.164
-
-# Audio processing (for future multimodal extensions)
-librosa>=0.10.0
-soundfile>=0.12.0
-
-# 3D processing (for advanced motion analysis)
-trimesh>=3.21.0
-open3d>=0.17.0
-
-# Networking (for distributed training)
-requests>=2.31.0
-urllib3>=2.0.0
-
-# System utilities
-click>=8.1.0
-colorama>=0.4.6

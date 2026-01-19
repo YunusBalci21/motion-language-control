@@ -1,0 +1,89 @@
+{
+  "start_time": "2026-01-17T23:27:24.308160",
+  "device": "cuda",
+  "quick_mode": false,
+  "hyperparameters": {
+    "learning_rate": 0.0003,
+    "n_steps": 4096,
+    "batch_size": 128,
+    "n_epochs": 10,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "ent_coef": 0.02,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "target_kl": 0.05
+  },
+  "environments": {
+    "halfcheetah": {
+      "env_name": "HalfCheetah-v4",
+      "env_key": "halfcheetah",
+      "instruction": "run forward",
+      "timesteps": 800000,
+      "training_time_seconds": 13861.967429161072,
+      "training_time_human": "3.9h",
+      "model_path": "./checkpoints_v2/halfcheetah_run_forward/final_model.zip",
+      "hyperparameters": {
+        "learning_rate": 0.0003,
+        "n_steps": 4096,
+        "batch_size": 128,
+        "n_epochs": 10,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_range": 0.2,
+        "ent_coef": 0.02,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5,
+        "target_kl": 0.05
+      }
+    },
+    "walker2d": {
+      "env_name": "Walker2d-v4",
+      "env_key": "walker2d",
+      "instruction": "walk forward",
+      "timesteps": 700000,
+      "training_time_seconds": 7083.8038647174835,
+      "training_time_human": "2.0h",
+      "model_path": "./checkpoints_v2/walker2d_walk_forward/final_model.zip",
+      "hyperparameters": {
+        "learning_rate": 0.0003,
+        "n_steps": 4096,
+        "batch_size": 128,
+        "n_epochs": 10,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_range": 0.2,
+        "ent_coef": 0.02,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5,
+        "target_kl": 0.05
+      }
+    },
+    "hopper": {
+      "env_name": "Hopper-v4",
+      "env_key": "hopper",
+      "instruction": "hop forward",
+      "timesteps": 500000,
+      "training_time_seconds": 4189.619212388992,
+      "training_time_human": "1.2h",
+      "model_path": "./checkpoints_v2/hopper_hop_forward/final_model.zip",
+      "hyperparameters": {
+        "learning_rate": 0.0003,
+        "n_steps": 4096,
+        "batch_size": 128,
+        "n_epochs": 10,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_range": 0.2,
+        "ent_coef": 0.02,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5,
+        "target_kl": 0.05
+      }
+    }
+  },
+  "total_time_seconds": 25135.396507263184,
+  "total_time_human": "7.0h",
+  "end_time": "2026-01-18T06:26:19.705164"
+}

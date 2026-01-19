@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\caption{Generalization to unseen instructions. Models trained on one instruction (e.g., ``walk forward'') and evaluated on semantically similar but lexically different instructions. Higher similarity indicates better generalization.}
+\label{tab:generalization}
+\begin{tabular}{llcc}
+\toprule
+\textbf{Environment} & \textbf{Instruction Category} & \textbf{Similarity} & \textbf{Gap} \\
+\midrule
+HalfCheetah & Seen (train) & 0.481 & -- \\
+ & Unseen (zero-shot) & 0.468 & +0.013 \\
+ & Variations & 0.465 & -- \\
+ & Negative & 0.480 & -- \\
+\midrule
+Ant & Seen (train) & 0.489 & -- \\
+ & Unseen (zero-shot) & 0.485 & +0.004 \\
+ & Variations & 0.492 & -- \\
+ & Negative & 0.497 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}

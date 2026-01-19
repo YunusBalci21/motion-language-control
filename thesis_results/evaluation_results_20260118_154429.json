@@ -1,0 +1,51 @@
+{
+  "timestamp": "2026-01-18T15:39:36.555742",
+  "n_episodes": 10,
+  "environments": {
+    "humanoid": {
+      "mean_reward": 116.38577948332684,
+      "std_reward": 13.128094168347122,
+      "mean_length": 100.0,
+      "mean_similarity": 0.43595500569941803,
+      "env_key": "humanoid",
+      "env_name": "Humanoid-v4",
+      "instruction": "walk forward"
+    },
+    "ant": {
+      "mean_reward": 586.034752979789,
+      "std_reward": 230.65850661839988,
+      "mean_length": 877.0,
+      "mean_similarity": 0.47812544171886806,
+      "env_key": "ant",
+      "env_name": "Ant-v4",
+      "instruction": "walk forward"
+    },
+    "halfcheetah": {
+      "mean_reward": 622.3980070648582,
+      "std_reward": 3.571249582332991,
+      "mean_length": 1000.0,
+      "mean_similarity": 0.5154642113655806,
+      "env_key": "halfcheetah",
+      "env_name": "HalfCheetah-v4",
+      "instruction": "run forward"
+    },
+    "walker2d": {
+      "mean_reward": 154.67913494392727,
+      "std_reward": 44.64517899109214,
+      "mean_length": 216.5,
+      "mean_similarity": 0.45840478398881485,
+      "env_key": "walker2d",
+      "env_name": "Walker2d-v4",
+      "instruction": "walk forward"
+    },
+    "hopper": {
+      "mean_reward": 24.598011554758003,
+      "std_reward": 0.3012486092189731,
+      "mean_length": 38.4,
+      "mean_similarity": 0.32932499826517503,
+      "env_key": "hopper",
+      "env_name": "Hopper-v4",
+      "instruction": "hop forward"
+    }
+  }
+}

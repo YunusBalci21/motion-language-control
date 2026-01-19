@@ -1,0 +1,363 @@
+{
+  "timestamp": "20260119_034123",
+  "n_eval_episodes": 5,
+  "environments": {
+    "halfcheetah": {
+      "env_key": "halfcheetah",
+      "env_name": "HalfCheetah-v4",
+      "train_instruction": "run forward",
+      "categories": {
+        "test_seen": [
+          {
+            "instruction": "run forward",
+            "mean_reward": -1850.5585594181327,
+            "std_reward": 30.843445580706877,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.48081574586571235,
+            "std_similarity": 8.611995862738988e-05,
+            "n_episodes": 5
+          }
+        ],
+        "test_unseen": [
+          {
+            "instruction": "sprint forward",
+            "mean_reward": -1824.0240151361752,
+            "std_reward": 134.41322316439604,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.4609170459333013,
+            "std_similarity": 0.0003848211055488823,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "dash forward",
+            "mean_reward": -1774.1014576359564,
+            "std_reward": 108.67300699643904,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.48211274205661214,
+            "std_similarity": 0.00046406839471067505,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "move quickly",
+            "mean_reward": -1735.924888210659,
+            "std_reward": 169.33616840702425,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.4918003148719913,
+            "std_similarity": 0.00026868452370001607,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "go fast",
+            "mean_reward": -1934.6377447053692,
+            "std_reward": 146.2611902017163,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.4369649722927907,
+            "std_similarity": 0.0006288252212941178,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "rush forward",
+            "mean_reward": -1824.0052493736953,
+            "std_reward": 125.93365147807819,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.47012884567995544,
+            "std_similarity": 0.0002692472524131871,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "race forward",
+            "mean_reward": -1820.1064264353038,
+            "std_reward": 120.02007556266832,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.46571564850260005,
+            "std_similarity": 0.00016849412493185101,
+            "n_episodes": 5
+          }
+        ],
+        "test_variations": [
+          {
+            "instruction": "run forward fast",
+            "mean_reward": -1727.3149869514486,
+            "std_reward": 217.6128926633607,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.4627223618694994,
+            "std_similarity": 0.0006928194385797073,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "run forward slowly",
+            "mean_reward": -1821.9587473490403,
+            "std_reward": 131.29292265228065,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.46979337608227967,
+            "std_similarity": 0.0005582570278108283,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "run straight ahead",
+            "mean_reward": -1474.8342913236852,
+            "std_reward": 96.07231776243717,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.4614696110858292,
+            "std_similarity": 0.0002299763965280391,
+            "n_episodes": 5
+          }
+        ],
+        "test_negative": [
+          {
+            "instruction": "walk forward",
+            "mean_reward": -1715.4067982525382,
+            "std_reward": 145.61097237749098,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.48906838219673904,
+            "std_similarity": 0.00023903480822569037,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "run backward",
+            "mean_reward": -1852.4304346331871,
+            "std_reward": 166.9310254495691,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.4734872629407977,
+            "std_similarity": 0.0003619041985031117,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "stop running",
+            "mean_reward": -1772.4911120129495,
+            "std_reward": 125.29842015335947,
+            "mean_length": 1000.0,
+            "mean_similarity": 0.47624663681280416,
+            "std_similarity": 0.00016637657940833311,
+            "n_episodes": 5
+          }
+        ]
+      },
+      "summary": {
+        "test_seen": {
+          "mean_similarity": 0.48081574586571235,
+          "std_similarity": 0.0,
+          "min_similarity": 0.48081574586571235,
+          "max_similarity": 0.48081574586571235,
+          "n_instructions": 1
+        },
+        "test_unseen": {
+          "mean_similarity": 0.4679399282228751,
+          "std_similarity": 0.01726602759487982,
+          "min_similarity": 0.4369649722927907,
+          "max_similarity": 0.4918003148719913,
+          "n_instructions": 6
+        },
+        "test_variations": {
+          "mean_similarity": 0.4646617830125361,
+          "std_similarity": 0.00366444918158031,
+          "min_similarity": 0.4614696110858292,
+          "max_similarity": 0.46979337608227967,
+          "n_instructions": 3
+        },
+        "test_negative": {
+          "mean_similarity": 0.47960076065011364,
+          "std_similarity": 0.006788737209720833,
+          "min_similarity": 0.4734872629407977,
+          "max_similarity": 0.48906838219673904,
+          "n_instructions": 3
+        },
+        "generalization_gap": 0.01287581764283724,
+        "generalization_ratio": 0.9732208902192788
+      }
+    },
+    "ant": {
+      "env_key": "ant",
+      "env_name": "Ant-v4",
+      "train_instruction": "walk forward",
+      "categories": {
+        "test_seen": [
+          {
+            "instruction": "walk forward",
+            "mean_reward": -694.6142744564002,
+            "std_reward": 311.053989722381,
+            "mean_length": 734.0,
+            "mean_similarity": 0.4886920155097383,
+            "std_similarity": 0.003692925422306627,
+            "n_episodes": 5
+          }
+        ],
+        "test_unseen": [
+          {
+            "instruction": "move ahead",
+            "mean_reward": -778.2743877172709,
+            "std_reward": 253.92118101444655,
+            "mean_length": 826.6,
+            "mean_similarity": 0.5004935456732883,
+            "std_similarity": 0.003990170614820341,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "go forward",
+            "mean_reward": -806.6647853022823,
+            "std_reward": 389.91085172230555,
+            "mean_length": 806.6,
+            "mean_similarity": 0.46798698706705066,
+            "std_similarity": 0.005070021780914567,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "walk ahead",
+            "mean_reward": -541.0717163870634,
+            "std_reward": 363.0728899310005,
+            "mean_length": 578.0,
+            "mean_similarity": 0.49114776753512385,
+            "std_similarity": 0.005863988874282037,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "move forward",
+            "mean_reward": -775.9902966188753,
+            "std_reward": 272.6986328002354,
+            "mean_length": 800.0,
+            "mean_similarity": 0.4947331247704363,
+            "std_similarity": 0.0021945258165870325,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "step forward",
+            "mean_reward": -502.15664074930226,
+            "std_reward": 312.9132624204809,
+            "mean_length": 532.6,
+            "mean_similarity": 0.49744100721012935,
+            "std_similarity": 0.004512346441367426,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "proceed forward",
+            "mean_reward": -656.6769698280394,
+            "std_reward": 373.71541759800334,
+            "mean_length": 685.4,
+            "mean_similarity": 0.4763962546288523,
+            "std_similarity": 0.0023091675321757726,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "advance forward",
+            "mean_reward": -870.4749528008867,
+            "std_reward": 110.44617926037033,
+            "mean_length": 915.8,
+            "mean_similarity": 0.46611871905284274,
+            "std_similarity": 0.00689010261982131,
+            "n_episodes": 5
+          }
+        ],
+        "test_variations": [
+          {
+            "instruction": "walk forward slowly",
+            "mean_reward": -850.6344466973594,
+            "std_reward": 115.09164128550523,
+            "mean_length": 915.0,
+            "mean_similarity": 0.4851897793244004,
+            "std_similarity": 0.0032559062463073797,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "walk forward quickly",
+            "mean_reward": -792.2791901082852,
+            "std_reward": 316.5751825441418,
+            "mean_length": 835.2,
+            "mean_similarity": 0.488642063287438,
+            "std_similarity": 0.007078000479265042,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "walk forward steadily",
+            "mean_reward": -875.8506121938493,
+            "std_reward": 147.80375965643915,
+            "mean_length": 924.4,
+            "mean_similarity": 0.49183452736238065,
+            "std_similarity": 0.003171299750144122,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "walk straight ahead",
+            "mean_reward": -848.4390115667768,
+            "std_reward": 309.03384335067665,
+            "mean_length": 810.2,
+            "mean_similarity": 0.5016382318898476,
+            "std_similarity": 0.004125803761732501,
+            "n_episodes": 5
+          }
+        ],
+        "test_negative": [
+          {
+            "instruction": "walk backward",
+            "mean_reward": -703.7064919782828,
+            "std_reward": 305.1339047941244,
+            "mean_length": 706.6,
+            "mean_similarity": 0.49592606566571246,
+            "std_similarity": 0.001699860919907903,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "turn left",
+            "mean_reward": -700.3380975908931,
+            "std_reward": 330.248274696217,
+            "mean_length": 748.6,
+            "mean_similarity": 0.5004019141084459,
+            "std_similarity": 0.0029821031332060784,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "stop moving",
+            "mean_reward": -824.1505045045976,
+            "std_reward": 253.97228007522162,
+            "mean_length": 865.2,
+            "mean_similarity": 0.5162813195902485,
+            "std_similarity": 0.004561268099007249,
+            "n_episodes": 5
+          },
+          {
+            "instruction": "run forward",
+            "mean_reward": -944.6834560058129,
+            "std_reward": 54.2818445027972,
+            "mean_length": 959.8,
+            "mean_similarity": 0.476869725765752,
+            "std_similarity": 0.005448656951263502,
+            "n_episodes": 5
+          }
+        ]
+      },
+      "summary": {
+        "test_seen": {
+          "mean_similarity": 0.4886920155097383,
+          "std_similarity": 0.0,
+          "min_similarity": 0.4886920155097383,
+          "max_similarity": 0.4886920155097383,
+          "n_instructions": 1
+        },
+        "test_unseen": {
+          "mean_similarity": 0.484902486562532,
+          "std_similarity": 0.013348411531906208,
+          "min_similarity": 0.46611871905284274,
+          "max_similarity": 0.5004935456732883,
+          "n_instructions": 7
+        },
+        "test_variations": {
+          "mean_similarity": 0.49182615046601663,
+          "std_similarity": 0.006133042579551093,
+          "min_similarity": 0.4851897793244004,
+          "max_similarity": 0.5016382318898476,
+          "n_instructions": 4
+        },
+        "test_negative": {
+          "mean_similarity": 0.4973697562825397,
+          "std_similarity": 0.01404614450311031,
+          "min_similarity": 0.476869725765752,
+          "max_similarity": 0.5162813195902485,
+          "n_instructions": 4
+        },
+        "generalization_gap": 0.0037895289472063,
+        "generalization_ratio": 0.9922455681146057
+      }
+    }
+  },
+  "total_time_seconds": 171.4103000164032,
+  "total_time_human": "2.9 min"
+}

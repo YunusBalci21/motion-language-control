@@ -42,7 +42,6 @@ class PDActionWrapper(gym.ActionWrapper):
         qd = data.qvel[self.qvel_adr].copy()
         # Convert unit targets to approximate joint ranges
         # Assume symmetric ~[-1,1] rad if range unknown
-        # If you know per-joint ranges, replace with a table.
         q_target = target_pos_unit  # ~radians
         tau = self.kp * (q_target - q) - self.kd * qd
         self._u[:] = tau

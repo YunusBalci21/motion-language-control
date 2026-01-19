@@ -1,149 +1,118 @@
-# configs/default.yaml (UPDATE - reduce stability focus initially)
+# configs/default.yaml
+# Motion-Language Control - Stable Training Configuration
+# Fixed hyperparameters to prevent KL divergence explosion
+
 experiment:
-  name: "direct_motion_language_learning"
-  description: "Enhanced motion-language control with forward movement focus"
-  version: "3.1"
+  name: "motion_language_control"
+  description: "Humanoid motion-language control with stable PPO"
+  version: "4.0"
   authors: ["Yunus Emre Balci"]
   institution: "SDU"
-
-algo: ppo
 
 environment:
   id: "Humanoid-v4"
   name: "Humanoid-v4"
-  alternatives: ["HalfCheetah-v4", "Ant-v4", "Walker2d-v4"]
-  num_envs: 8
+  num_envs: 1
   max_episode_steps: 1000
-  max_steps: 1000
-  render_mode: null
 
-training:
-  total_timesteps_per_instruction: 200000  # Increased
-  language_reward_weights: [0.5, 0.6, 0.7, 0.8]  # Start higher
-  n_parallel_envs: 4
-  use_multiprocessing: false
-  eval_freq: 10000
-  checkpoint_freq: 5000
+  # Stability wrapper settings
+  action_scale: 0.4          # Lower = more stable movements
+  action_smoothing: 0.7      # Higher = smoother actions
+  target_height: 1.25        # Target standing height
+  min_height: 0.8            # Termination threshold
+  initial_noise: 0.01        # Initial state randomization
 
 ppo:
-  lr: 5.0e-4  # Increased learning rate
-  learning_rate: 5.0e-4
+  # Learning rate - CRITICAL: single consistent value
+  learning_rate: 1.0e-4      # Conservative LR to prevent KL explosion
+  lr_schedule: "linear"      # Decay over training
+
+  # GAE parameters
   gamma: 0.99
-  lam: 0.95
   gae_lambda: 0.95
-  clip_range: 0.2
-  clip_ratio: 0.2
-  steps_per_update: 8192
-  n_steps: 2048
-  batch_size: 64
-  minibatches: 32
-  epochs: 10
-  n_epochs: 10
-  vf_coef: 0.5
-  ent_coef: 0.01  # Increased for exploration
+
+  # PPO clipping - tighter for stability
+  clip_range: 0.1            # Was 0.2, tighter prevents large updates
+  clip_range_vf: null        # No value clipping
+
+  # Batch settings
+  n_steps: 2048              # Steps per rollout
+  batch_size: 2048           # Same as n_steps for single env
+  minibatch_size: 128        # Larger minibatches = more stable
+  n_epochs: 5                # Fewer epochs = less overfitting per batch
+
+  # Loss coefficients
+  value_coef: 0.5
+  entropy_coef: 0.005        # Lower entropy = less random exploration
   max_grad_norm: 0.5
-  norm_adv: true
+
+  # Early stopping
+  target_kl: 0.03            # Stop epoch if KL exceeds this
+  max_kl: 0.05               # Hard limit for KL divergence
+
+training:
+  total_timesteps: 2000000
+
+  # Logging & saving
+  log_interval: 10           # Episodes between logs
+  eval_interval: 50000       # Steps between evaluations
+  save_interval: 50000       # Steps between checkpoints
+  eval_episodes: 5
+
+  # Directories
+  checkpoint_dir: "checkpoints"
+  log_dir: "logs"
+  video_dir: "videos"
+
+network:
+  hidden_sizes: [256, 256]
+  activation: "tanh"
+  ortho_init: true
+  log_std_init: -0.5         # Initial action std (exp(-0.5) ≈ 0.6)
+
+rewards:
+  use_motion_language: true
+  stability_weight: 0.5      # Balance: 0.5 stability, 0.5 task
+  motion_reward_scale: 3.0   # Scale for motion-language reward
+
+  # Curriculum - gradually reduce stability focus
+  curriculum:
+    - phase: 1
+      instruction: "stand still"
+      steps: 200000
+      stability_weight: 0.7
+    - phase: 2
+      instruction: "walk forward slowly"
+      steps: 300000
+      stability_weight: 0.5
+    - phase: 3
+      instruction: "walk forward"
+      steps: 500000
+      stability_weight: 0.4
+    - phase: 4
+      instruction: "walk forward"
+      steps: 500000
+      stability_weight: 0.3
 
 instructions:
   basic:
+    - "stand still"
     - "walk forward"
     - "walk forward slowly"
-    - "walk forward quickly"
     - "walk backward"
     - "turn left"
     - "turn right"
-    - "stop moving"
-
-  intermediate:
-    - "walk forward steadily"
-    - "walk forward without falling"
-    - "run forward"
-    - "turn left while walking"
-    - "turn right while walking"
-
-  stability_focused:
-    - "walk stably"
-    - "walk without falling"
-    - "maintain balance while moving"
 
 evaluation:
-  n_eval_episodes: 5
-  eval_deterministic: true
-  cross_evaluation: true
-  benchmark_against_clip: true
-  compute_similarity_metrics: true
-  track_computation_times: true
-  save_episode_videos: true
-  similarity_threshold_good: 0.5  # Lowered
-  similarity_threshold_excellent: 0.7  # Lowered
-  reward_threshold_success: 80.0  # Lowered
-
-motion_gpt:
-  config_path: null
-  checkpoint_path: null
-  language_model: "t5-small"
-  motion_dim: 263
-  max_sequence_length: 196
-  codebook_size: 512
-  latent_dim: 256
-  temporal_aggregation: "weighted_recent"
-  reward_smoothing: 0.8
-  success_threshold: 0.5
-  motion_history_length: 20
-  motion_normalization: true
-
-hierarchical:
-  use_hierarchical_structure: false
-  low_level_freq: 10
-  high_level_freq: 1
-  discover_skills: false
-  skill_embedding_dim: 64
-  n_discovered_skills: 16
-
-logging:
-  tensorboard_log: "./logs/"
-  wandb_project: null
-  log_level: "INFO"
-  save_model_every_n_steps: 10000
-  track_metrics:
-    - "motion_language_similarity"
-    - "language_reward"
-    - "original_env_reward"
-    - "episode_length"
-    - "computation_time"
-    - "motion_variance"
-
-experimental:
-  use_progress_bonus: true
-  use_instruction_specific_rewards: true
-  stability_bonus_weight: 0.2  # Reduced
-  use_motion_augmentation: false
-  augmentation_noise_std: 0.01
-  adaptive_curriculum: false
-  curriculum_success_threshold: 0.6
-  use_visual_features: false
-  use_audio_instructions: false
+  n_episodes: 5
+  deterministic: true
+  record_video: true
+  video_length: 500
 
 hardware:
-  device: "auto"
+  device: "auto"             # auto/cuda/cpu
   mixed_precision: false
-  compile_model: false
-  gradient_accumulation_steps: 1
-  max_memory_usage_gb: 8.0
 
 reproducibility:
   seed: 42
-  deterministic_training: false
-  save_random_state: true
-  save_training_curves: true
-  save_model_architecture: true
-  save_hyperparameters: true
-  generate_performance_plots: true
-
-baselines:
-  clip_based_reward: true
-  pixel_rendering_time: 7
-  clip_encoding_time: 15
-  random_policy: false
-  pretrained_locomotion: false
-  vision_based_reward: false
+  deterministic: false

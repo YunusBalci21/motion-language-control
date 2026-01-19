@@ -1,249 +1,637 @@
 # src/envs/humanoid_stable.py
+"""
+Stable Humanoid Environment Wrapper for Motion-Language Control
+
+- Added reward_shaping flag to disable reward modification
+- When reward_shaping=False, only handles termination (no reward conflicts)
+- PD control and physics tuning still applied
+"""
+
 import math
-from pathlib import Path
+from typing import Optional, Dict, Any, Tuple
 import numpy as np
 import gymnasium as gym
+from gymnasium import spaces
 from gymnasium.wrappers import TimeLimit
 
 try:
-    import mujoco  # noqa: F401
-except Exception:
-    pass
+    import mujoco
+except ImportError:
+    mujoco = None
 
 
-# ---------- small utilities ----------
+# ============================================================================
+# Utility Functions
+# ============================================================================
 
-def _quat_to_euler_xyz(qw, qx, qy, qz):
+def quat_to_euler(qw: float, qx: float, qy: float, qz: float) -> Tuple[float, float, float]:
+    """
+    Convert quaternion to Euler angles (roll, pitch, yaw).
+
+    Args:
+        qw, qx, qy, qz: Quaternion components (w, x, y, z)
+
+    Returns:
+        Tuple of (roll, pitch, yaw) in radians
+    """
+    # Roll (x-axis rotation)
     sinr_cosp = 2 * (qw * qx + qy * qz)
     cosr_cosp = 1 - 2 * (qx * qx + qy * qy)
     roll = math.atan2(sinr_cosp, cosr_cosp)
 
+    # Pitch (y-axis rotation)
     sinp = 2 * (qw * qy - qz * qx)
     sinp = max(-1.0, min(1.0, sinp))
     pitch = math.asin(sinp)
 
+    # Yaw (z-axis rotation)
     siny_cosp = 2 * (qw * qz + qx * qy)
     cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
     yaw = math.atan2(siny_cosp, cosy_cosp)
+
     return roll, pitch, yaw
 
 
-# ---------- wrappers ----------
+def get_uprightness(qw: float, qx: float, qy: float, qz: float) -> float:
+    """
+    Compute uprightness from quaternion (1.0 = perfectly upright).
 
-class StrongPDController(gym.ActionWrapper):
-    """Much stronger PD controller with per-joint tuning for stability."""
+    This is the z-component of the rotated up vector.
+    """
+    return 1 - 2 * (qx * qx + qy * qy)
 
-    def __init__(self, env: gym.Env):
+
+# ============================================================================
+# Humanoid Joint Configuration
+# ============================================================================
+
+class HumanoidJointConfig:
+    """
+    Configuration for Humanoid-v4 joints and actuators.
+
+    Humanoid-v4 has 17 actuators in this order:
+    0-2: abdomen (y, z, x rotations)
+    3-5: right_hip (x, z, y rotations)
+    6: right_knee
+    7-9: left_hip (x, z, y rotations)
+    10: left_knee
+    11-12: right_shoulder (x, y rotations)
+    13: right_elbow
+    14-15: left_shoulder (x, y rotations)
+    16: left_elbow
+    """
+
+    # Joint groups
+    ABDOMEN = [0, 1, 2]
+    RIGHT_HIP = [3, 4, 5]
+    RIGHT_KNEE = [6]
+    LEFT_HIP = [7, 8, 9]
+    LEFT_KNEE = [10]
+    RIGHT_SHOULDER = [11, 12]
+    RIGHT_ELBOW = [13]
+    LEFT_SHOULDER = [14, 15]
+    LEFT_ELBOW = [16]
+
+    # Functional groups
+    CORE = ABDOMEN
+    HIPS = RIGHT_HIP + LEFT_HIP
+    KNEES = RIGHT_KNEE + LEFT_KNEE
+    LEGS = HIPS + KNEES
+    ARMS = RIGHT_SHOULDER + RIGHT_ELBOW + LEFT_SHOULDER + LEFT_ELBOW
+
+    # Recommended PD gains per joint group
+    GAINS = {
+        'core': {'kp': 400.0, 'kd': 40.0},
+        'hip': {'kp': 300.0, 'kd': 30.0},
+        'knee': {'kp': 250.0, 'kd': 25.0},
+        'shoulder': {'kp': 150.0, 'kd': 15.0},
+        'elbow': {'kp': 100.0, 'kd': 10.0},
+    }
+
+
+# ============================================================================
+# PD Controller Wrapper
+# ============================================================================
+
+class PDController(gym.ActionWrapper):
+    """
+    PD controller with per-joint tuning for stable humanoid control.
+
+    Converts normalized actions [-1, 1] to joint torques using
+    position-derivative control with joint-specific gains.
+    """
+
+    def __init__(
+            self,
+            env: gym.Env,
+            action_scale: float = 0.4,
+            smoothing: float = 0.7,
+            use_joint_specific_gains: bool = True
+    ):
+        """
+        Args:
+            env: Base environment
+            action_scale: Scale factor for action magnitudes (smaller = more stable)
+            smoothing: Exponential smoothing factor for action filtering
+            use_joint_specific_gains: Whether to use different gains per joint
+        """
         super().__init__(env)
+
         m = env.unwrapped.model
+        self.num_actuators = m.nu
+
+        # Get actuator-joint mapping
         self.act_joint_ids = m.actuator_trnid[:, 0].astype(int)
         self.qpos_adr = m.jnt_qposadr[self.act_joint_ids].astype(int)
         self.qvel_adr = m.jnt_dofadr[self.act_joint_ids].astype(int)
-        self._u = np.zeros(m.nu, dtype=np.float64)
 
-        # MUCH stronger gains for stability
-        # Different gains for different joint types
-        self.kp = np.ones(m.nu) * 300.0  # Base high gain
-        self.kd = np.ones(m.nu) * 30.0  # High damping
+        # Initialize gains
+        self.kp = np.ones(self.num_actuators) * 200.0
+        self.kd = np.ones(self.num_actuators) * 20.0
 
-        # Even higher gains for core/hip joints (typically first few)
-        self.kp[:6] = 500.0  # Core stability
-        self.kd[:6] = 50.0
+        if use_joint_specific_gains:
+            self._setup_joint_specific_gains()
 
-        # Lower gains for extremities (typically last few)
-        self.kp[-4:] = 200.0
-        self.kd[-4:] = 20.0
+        self.action_scale = action_scale
+        self.smoothing = smoothing
 
-        # Target position filter for smoothing
-        self.prev_target = None
-        self.alpha = 0.8  # Smoothing factor
+        # State for smoothing
+        self.prev_action = None
+        self._torque_buffer = np.zeros(self.num_actuators, dtype=np.float64)
 
-    def action(self, action):
-        # Clip and smooth actions
+    def _setup_joint_specific_gains(self):
+        """Configure per-joint PD gains for stability."""
+        cfg = HumanoidJointConfig
+        gains = cfg.GAINS
+
+        # Core (highest gains for stability)
+        for i in cfg.CORE:
+            if i < self.num_actuators:
+                self.kp[i] = gains['core']['kp']
+                self.kd[i] = gains['core']['kd']
+
+        # Hips (high gains for stance)
+        for i in cfg.HIPS:
+            if i < self.num_actuators:
+                self.kp[i] = gains['hip']['kp']
+                self.kd[i] = gains['hip']['kd']
+
+        # Knees
+        for i in cfg.KNEES:
+            if i < self.num_actuators:
+                self.kp[i] = gains['knee']['kp']
+                self.kd[i] = gains['knee']['kd']
+
+        # Shoulders
+        for i in cfg.RIGHT_SHOULDER + cfg.LEFT_SHOULDER:
+            if i < self.num_actuators:
+                self.kp[i] = gains['shoulder']['kp']
+                self.kd[i] = gains['shoulder']['kd']
+
+        # Elbows
+        for i in cfg.RIGHT_ELBOW + cfg.LEFT_ELBOW:
+            if i < self.num_actuators:
+                self.kp[i] = gains['elbow']['kp']
+                self.kd[i] = gains['elbow']['kd']
+
+    def reset(self, **kwargs):
+        """Reset smoothing state."""
+        self.prev_action = None
+        return self.env.reset(**kwargs)
+
+    def action(self, action: np.ndarray) -> np.ndarray:
+        """
+        Convert normalized action to PD-controlled torques.
+
+        Args:
+            action: Normalized action in [-1, 1]
+
+        Returns:
+            Joint torques
+        """
+        # Clip input action
         action = np.clip(action, -1.0, 1.0)
 
-        # Apply smoothing filter to reduce jerkiness
-        if self.prev_target is not None:
-            action = self.alpha * action + (1 - self.alpha) * self.prev_target
-        self.prev_target = action.copy()
+        # Apply smoothing filter
+        if self.prev_action is not None:
+            action = self.smoothing * self.prev_action + (1 - self.smoothing) * action
+        self.prev_action = action.copy()
 
-        # Scale actions to smaller range for stability
-        action = action * 0.5  # Reduce action magnitude
+        # Scale actions
+        scaled_action = action * self.action_scale
 
+        # Get current joint state
         d = self.env.unwrapped.data
         q = d.qpos[self.qpos_adr].copy()
         qd = d.qvel[self.qvel_adr].copy()
 
-        # PD control with per-joint gains
-        tau = self.kp * (action - q) - self.kd * qd
+        # PD control: tau = kp * (target - current) - kd * velocity
+        tau = self.kp * (scaled_action - q) - self.kd * qd
 
-        # Additional damping for high velocities
-        high_vel_damping = np.where(np.abs(qd) > 2.0, qd * 20.0, 0.0)
-        tau -= high_vel_damping
+        # Additional velocity damping for high speeds
+        high_vel_mask = np.abs(qd) > 3.0
+        tau[high_vel_mask] -= 10.0 * qd[high_vel_mask]
 
-        self._u[:] = tau
-        return np.clip(self._u, self.env.action_space.low, self.env.action_space.high)
+        # Clip to actuator limits
+        self._torque_buffer[:] = np.clip(
+            tau,
+            self.env.action_space.low,
+            self.env.action_space.high
+        )
+
+        return self._torque_buffer
 
 
-class ImprovedStabilityShaping(gym.Wrapper):
-    """Enhanced stability with better balance control and anti-pitch compensation."""
+# ============================================================================
+# Stability Reward Shaping Wrapper
+# ============================================================================
 
-    def __init__(self, env: gym.Env):
+class StabilityWrapper(gym.Wrapper):
+    """
+    Wrapper that adds stability-based termination and optional reward shaping.
+
+    FIXED: Added reward_shaping flag to disable reward modification.
+    When used with DirectMotionLanguageWrapper, set reward_shaping=False
+    to avoid conflicting reward signals.
+
+    Features:
+    - Height maintenance rewards (optional)
+    - Uprightness rewards (optional)
+    - Early termination for falls (always active)
+    """
+
+    def __init__(
+            self,
+            env: gym.Env,
+            target_height: float = 1.25,
+            min_height: float = 0.8,
+            max_pitch: float = 1.0,
+            max_roll: float = 1.0,
+            initial_noise_scale: float = 0.01,
+            fall_penalty: float = 0.0,  # CHANGED: Default to 0 (let wrapper handle it)
+            reward_shaping: bool = True,  # NEW: Flag to enable/disable reward modification
+            reward_weights: Optional[Dict] = None,
+    ):
+        """
+        Args:
+            env: Base environment
+            target_height: Target standing height for reward
+            min_height: Minimum height before termination
+            max_pitch: Maximum pitch angle before termination
+            max_roll: Maximum roll angle before termination
+            initial_noise_scale: Scale of noise added to initial state
+            fall_penalty: Penalty applied on termination (only if reward_shaping=True)
+            reward_shaping: Whether to modify rewards (set False when using with another reward wrapper)
+            reward_weights: Weights for reward components
+        """
         super().__init__(env)
+
+        self.target_height = target_height
+        self.min_height = min_height
+        self.max_pitch = max_pitch
+        self.max_roll = max_roll
+        self.initial_noise_scale = initial_noise_scale
+        self.fall_penalty = fall_penalty
+        self.reward_shaping = reward_shaping  # NEW
+
+        # Default reward weights
+        self.reward_weights = reward_weights or {
+            'height': 1.0,
+            'upright': 1.0,
+            'alive_bonus': 0.5,
+        }
+
+        # Episode tracking
         self.episode_steps = 0
-        self.initial_height = 1.4  # Approximate starting height
-        self.prev_pitch = 0.0
-        self.pitch_integral = 0.0  # For integral control
+        self.episode_return = 0.0
 
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        d = self.unwrapped.data
+    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict]:
+        """Reset with optional initial state noise for robustness."""
+        obs, info = self.env.reset(seed=seed, options=options)
 
-        # Much smaller initial noise - only on non-critical joints
-        joint_start_idx = 7
-        d.qpos[joint_start_idx:] += np.random.uniform(-0.002, 0.002,
-                                                      size=d.qpos[joint_start_idx:].shape)
-        d.qvel[:] = 0.0
+        # Add small noise to initial state for robustness
+        if self.initial_noise_scale > 0:
+            m = self.unwrapped.model
+            d = self.unwrapped.data
 
-        # Set a good initial posture if possible
-        # This helps start from a stable configuration
-        d.qpos[2] = 1.4  # Set good initial height
-        d.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]  # Perfect upright quaternion
+            # Add noise to joint positions (skip root position/orientation)
+            qpos_noise = np.random.normal(0, self.initial_noise_scale, size=d.qpos.shape)
+            qpos_noise[:7] = 0  # Don't perturb root
+            d.qpos[:] = d.qpos + qpos_noise
 
+            # Small velocity noise
+            qvel_noise = np.random.normal(0, self.initial_noise_scale * 0.1, size=d.qvel.shape)
+            d.qvel[:] = d.qvel + qvel_noise
+
+            # Forward kinematics
+            mujoco.mj_forward(m, d)
+
+        # Get updated observation
+        obs = self.unwrapped._get_obs()
+
+        # Reset tracking
         self.episode_steps = 0
-        self.prev_pitch = 0.0
-        self.pitch_integral = 0.0
+        self.episode_return = 0.0
+
+        info['initial_height'] = float(d.qpos[2])
 
         return obs, info
 
-    def step(self, action):
-        # Anti-pitch compensation
-        d = self.unwrapped.data
-        qw, qx, qy, qz = map(float, d.qpos[3:7])
-        roll, pitch, _ = _quat_to_euler_xyz(qw, qx, qy, qz)
-
-        # If pitching forward, adjust hip joints to lean back
-        if abs(pitch) > 0.1:
-            # Simple proportional-integral control
-            pitch_correction = -pitch * 0.3 - self.pitch_integral * 0.1
-            # Apply correction to hip joints (typically indices 3-5)
-            if len(action) > 5:
-                action[3] += pitch_correction
-                action[4] += pitch_correction
-                action[5] += pitch_correction * 0.5
-
-            # Update integral
-            self.pitch_integral += pitch * 0.01
-            self.pitch_integral = np.clip(self.pitch_integral, -0.5, 0.5)
-
-        obs, rew, terminated, truncated, info = self.env.step(action)
+    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict]:
+        """Step with stability termination and optional reward shaping."""
+        obs, reward, terminated, truncated, info = self.env.step(action)
         self.episode_steps += 1
 
+        d = self.unwrapped.data
+
+        # Extract state
         z = float(d.qpos[2])
+        qw, qx, qy, qz = map(float, d.qpos[3:7])
+        roll, pitch, yaw = quat_to_euler(qw, qx, qy, qz)
+        uprightness = get_uprightness(qw, qx, qy, qz)
 
-        # Stricter termination conditions
-        if z < 0.7 or abs(pitch) > 1.2 or abs(roll) > 1.2:
+        # Check termination conditions (ALWAYS active)
+        should_terminate = False
+        termination_reason = None
+
+        if z < self.min_height:
+            should_terminate = True
+            termination_reason = 'low_height'
+        elif abs(pitch) > self.max_pitch:
+            should_terminate = True
+            termination_reason = 'excessive_pitch'
+        elif abs(roll) > self.max_roll:
+            should_terminate = True
+            termination_reason = 'excessive_roll'
+
+        if should_terminate:
             terminated = True
-            rew -= 20.0
-        else:
-            # Height maintenance reward
-            height_error = abs(z - self.initial_height)
-            height_reward = np.exp(-3.0 * height_error)
+            info['termination_reason'] = termination_reason
+            
+            # Only apply fall penalty if reward shaping is enabled
+            if self.reward_shaping:
+                reward -= self.fall_penalty
+                
+        elif self.reward_shaping:
+            # Only compute stability rewards if reward_shaping is enabled
+            w = self.reward_weights
 
-            # Uprightness reward (stronger weight on pitch)
-            upright_reward = np.exp(-5.0 * (pitch ** 2)) * np.exp(-3.0 * (roll ** 2))
+            # Height reward (Gaussian around target)
+            height_error = abs(z - self.target_height)
+            height_reward = np.exp(-3.0 * height_error ** 2)
 
-            # Velocity penalty (discourage fast movements initially)
-            vel_penalty = 0.01 * np.sum(np.square(d.qvel))
+            # Uprightness reward
+            upright_reward = np.exp(-4.0 * (pitch ** 2 + roll ** 2))
 
-            # Combine rewards
-            rew += 2.0 * height_reward + 3.0 * upright_reward - vel_penalty
+            # Alive bonus
+            alive_bonus = w['alive_bonus']
 
-            # Extra reward for maintaining good posture
-            if z > 1.3 and abs(pitch) < 0.2 and abs(roll) < 0.2:
-                rew += 2.0
+            # Combine
+            stability_reward = (
+                    w['height'] * height_reward +
+                    w['upright'] * upright_reward +
+                    alive_bonus
+            )
 
-        info["root_z"] = z
-        info["root_pitch"] = pitch
-        info["root_roll"] = roll
-        info["episode_steps"] = self.episode_steps
+            reward += stability_reward
 
-        self.prev_pitch = pitch
+            # Extra bonus for really good posture
+            if z > self.target_height - 0.1 and abs(pitch) < 0.15 and abs(roll) < 0.15:
+                reward += 1.0
 
-        return obs, float(rew), bool(terminated), bool(truncated), info
+        # Update tracking
+        self.episode_return += reward
+
+        # Add info (always include state info, regardless of reward_shaping)
+        info.update({
+            'height': z,
+            'pitch': pitch,
+            'roll': roll,
+            'yaw': yaw,
+            'uprightness': uprightness,
+            'episode_steps': self.episode_steps,
+            'episode_return': self.episode_return,
+            'reward_shaping_active': self.reward_shaping,
+        })
+
+        return obs, float(reward), bool(terminated), bool(truncated), info
 
 
-def aggressive_physics_tuning(env: gym.Env):
-    """Very aggressive physics settings for maximum stability."""
+# ============================================================================
+# Physics Tuning
+# ============================================================================
+
+def tune_physics(env: gym.Env, config: Optional[Dict] = None) -> gym.Env:
+    """
+    Apply physics tuning for stable humanoid simulation.
+
+    Args:
+        env: Base MuJoCo environment
+        config: Optional configuration overrides
+
+    Returns:
+        Environment with tuned physics
+    """
+    config = config or {}
     m = env.unwrapped.model
 
-    # Maximum friction for no slipping
-    fr = m.geom_friction.copy()
-    fr[:, 0] = 3.0  # Very high tangential friction
-    fr[:, 1] = 0.2  # Torsional friction
-    fr[:, 2] = 0.1  # Rolling friction
-    m.geom_friction[:] = fr
+    # Friction settings
+    friction = m.geom_friction.copy()
+    friction[:, 0] = config.get('tangent_friction', 1.5)  # Tangential
+    friction[:, 1] = config.get('torsional_friction', 0.1)  # Torsional
+    friction[:, 2] = config.get('rolling_friction', 0.05)  # Rolling
+    m.geom_friction[:] = friction
 
-    # Better solver settings
-    m.opt.tolerance = 1e-12
-    m.opt.iterations = 100  # Many iterations
-    m.opt.timestep = 0.001  # Smaller timestep for stability
+    # Solver settings for accuracy
+    m.opt.tolerance = config.get('solver_tolerance', 1e-10)
+    m.opt.iterations = config.get('solver_iterations', 50)
 
-    # Add significant joint damping
+    # Timestep (smaller = more stable but slower)
+    m.opt.timestep = config.get('timestep', 0.002)
+
+    # Joint damping
     if hasattr(m, 'dof_damping'):
-        m.dof_damping[:] = np.maximum(m.dof_damping[:], 2.0)
-
-    # Reduce joint limits slightly to prevent extreme poses
-    if hasattr(m, 'jnt_range'):
-        # Shrink joint ranges by 10% to avoid extremes
-        ranges = m.jnt_range.copy()
-        for i in range(len(ranges)):
-            mid = (ranges[i, 0] + ranges[i, 1]) / 2
-            span = ranges[i, 1] - ranges[i, 0]
-            ranges[i, 0] = mid - span * 0.45
-            ranges[i, 1] = mid + span * 0.45
-        m.jnt_range[:] = ranges
+        base_damping = config.get('joint_damping', 0.5)
+        m.dof_damping[:] = np.maximum(m.dof_damping[:], base_damping)
 
     return env
 
 
-# ---------- factory for the registered env ----------
+# ============================================================================
+# Factory Functions
+# ============================================================================
 
-def make_wrapped_humanoid_env(**kwargs):
-    """Entry point used by gym registry."""
+def make_stable_humanoid(
+        max_episode_steps: int = 1000,
+        action_scale: float = 0.4,
+        action_smoothing: float = 0.7,
+        target_height: float = 1.25,
+        min_height: float = 0.8,
+        initial_noise: float = 0.01,
+        reward_shaping: bool = True,  # NEW: Pass through to StabilityWrapper
+        physics_config: Optional[Dict] = None,
+        **kwargs
+) -> gym.Env:
+    """
+    Create a stable humanoid environment with all wrappers applied.
+
+    Args:
+        max_episode_steps: Maximum steps per episode
+        action_scale: Scale factor for actions
+        action_smoothing: Smoothing factor for action filter
+        target_height: Target standing height
+        min_height: Minimum height before termination
+        initial_noise: Scale of initial state noise
+        reward_shaping: Whether to apply stability reward shaping
+                       Set to False when using with DirectMotionLanguageWrapper
+        physics_config: Physics tuning configuration
+        **kwargs: Additional arguments for Humanoid-v4
+
+    Returns:
+        Wrapped environment
+    """
+    # Create base environment
     base = gym.make("Humanoid-v4", **kwargs)
-    base = aggressive_physics_tuning(base)
 
-    # Use the stronger PD controller
-    env = StrongPDController(base)
-    env = ImprovedStabilityShaping(env)
+    # Apply physics tuning
+    env = tune_physics(base, physics_config)
 
-    # Episode limit
-    max_steps = kwargs.get("max_episode_steps", 1000)
-    env = TimeLimit(env, max_episode_steps=max_steps)
+    # Add PD controller
+    env = PDController(
+        env,
+        action_scale=action_scale,
+        smoothing=action_smoothing
+    )
+
+    # Add stability wrapper (with optional reward shaping)
+    env = StabilityWrapper(
+        env,
+        target_height=target_height,
+        min_height=min_height,
+        initial_noise_scale=initial_noise,
+        reward_shaping=reward_shaping,  # NEW: Can disable reward modification
+    )
+
+    # Add time limit
+    env = TimeLimit(env, max_episode_steps=max_episode_steps)
 
     return env
 
 
-# ---------- helpers used by your agent ----------
+def make_stable_humanoid_no_reward_shaping(
+        max_episode_steps: int = 1000,
+        action_scale: float = 0.4,
+        action_smoothing: float = 0.7,
+        target_height: float = 1.25,
+        min_height: float = 0.8,
+        initial_noise: float = 0.01,
+        physics_config: Optional[Dict] = None,
+        **kwargs
+) -> gym.Env:
+    """
+    Convenience function: Create stable humanoid WITHOUT reward shaping.
+    
+    Use this when combining with DirectMotionLanguageWrapper to avoid
+    conflicting reward signals.
+    """
+    return make_stable_humanoid(
+        max_episode_steps=max_episode_steps,
+        action_scale=action_scale,
+        action_smoothing=action_smoothing,
+        target_height=target_height,
+        min_height=min_height,
+        initial_noise=initial_noise,
+        reward_shaping=False,  # Disable reward shaping
+        physics_config=physics_config,
+        **kwargs
+    )
+
+
+def make_wrapped_humanoid_env(**kwargs) -> gym.Env:
+    """Entry point for gymnasium registry."""
+    return make_stable_humanoid(**kwargs)
+
+
+# ============================================================================
+# Registration Helpers
+# ============================================================================
 
 def ensure_wrapped_humanoid_registered():
     """Register 'HumanoidStable-v4' if not already registered."""
+    env_id = "HumanoidStable-v4"
+
     try:
-        gym.spec("HumanoidStable-v4")
-        return  # already there
-    except Exception:
+        gym.spec(env_id)
+        return  # Already registered
+    except gym.error.NameNotFound:
         pass
+
     from gymnasium.envs.registration import register
     register(
-        id="HumanoidStable-v4",
+        id=env_id,
         entry_point="envs.humanoid_stable:make_wrapped_humanoid_env",
         max_episode_steps=1000,
     )
 
 
 def upgrade_env_name(name: str) -> str:
-    """Swap Humanoid-v4 → HumanoidStable-v4; otherwise return input."""
-    if name.lower().startswith("humanoid"):
+    """Convert standard env names to stable versions."""
+    name_lower = name.lower()
+
+    if 'humanoid' in name_lower and 'stable' not in name_lower:
         return "HumanoidStable-v4"
+
     return name
+
+
+# ============================================================================
+# Testing
+# ============================================================================
+
+if __name__ == "__main__":
+    print("Testing HumanoidStable environment...")
+    
+    # Test WITH reward shaping
+    print("\n=== Test 1: WITH reward shaping ===")
+    env = make_stable_humanoid(max_episode_steps=100, reward_shaping=True)
+    obs, info = env.reset()
+
+    print(f"Observation shape: {obs.shape}")
+    print(f"Action space: {env.action_space}")
+    print(f"Initial height: {info.get('initial_height', 'N/A')}")
+
+    total_reward = 0
+    for i in range(50):
+        action = env.action_space.sample() * 0.1
+        obs, reward, terminated, truncated, info = env.step(action)
+        total_reward += reward
+
+        if terminated or truncated:
+            print(f"Episode ended at step {i + 1}")
+            print(f"Termination reason: {info.get('termination_reason', 'truncated')}")
+            break
+
+    print(f"Total reward (with shaping): {total_reward:.2f}")
+    env.close()
+
+    # Test WITHOUT reward shaping
+    print("\n=== Test 2: WITHOUT reward shaping ===")
+    env = make_stable_humanoid_no_reward_shaping(max_episode_steps=100)
+    obs, info = env.reset()
+
+    total_reward = 0
+    for i in range(50):
+        action = env.action_space.sample() * 0.1
+        obs, reward, terminated, truncated, info = env.step(action)
+        total_reward += reward
+
+        if terminated or truncated:
+            print(f"Episode ended at step {i + 1}")
+            print(f"Termination reason: {info.get('termination_reason', 'truncated')}")
+            break
+
+    print(f"Total reward (no shaping): {total_reward:.2f}")
+    print(f"Reward shaping active: {info.get('reward_shaping_active', 'N/A')}")
+    env.close()
+
+    print("\nTest complete!")

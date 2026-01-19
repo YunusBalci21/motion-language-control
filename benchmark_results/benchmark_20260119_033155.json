@@ -1,0 +1,36 @@
+{
+  "motiongpt": {
+    "method": "MotionGPT (Ours)",
+    "iterations": 500,
+    "total_time_seconds": 0.2579777000210015,
+    "mean_time_ms": 0.515955400042003,
+    "std_time_ms": 0.14016458682755092,
+    "min_time_ms": 0.37259999953676015,
+    "max_time_ms": 1.2371000048005953,
+    "throughput_per_second": 1938.1520184081642,
+    "gpu_memory_mb": 18.41357421875,
+    "includes_rendering": false,
+    "device": "cuda"
+  },
+  "clip": {
+    "method": "CLIP + Rendering (AnySkill-style)",
+    "iterations": 500,
+    "total_time_seconds": 7.4264750001748325,
+    "mean_time_ms": 14.852950000349665,
+    "std_time_ms": 2.16347243738757,
+    "min_time_ms": 10.988900001393631,
+    "max_time_ms": 26.653799999621697,
+    "throughput_per_second": 67.32669267562729,
+    "gpu_memory_mb": 599.0205078125,
+    "includes_rendering": true,
+    "device": "cuda"
+  },
+  "speedup_factor": 28.787275022493247,
+  "memory_reduction_factor": 32.53146296836467,
+  "timestamp": "2026-01-19T03:31:55.781188",
+  "config": {
+    "iterations": 500,
+    "warmup": 50,
+    "device": "cuda"
+  }
+}

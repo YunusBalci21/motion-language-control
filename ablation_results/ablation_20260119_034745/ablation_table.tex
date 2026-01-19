@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\caption{Ablation study: MotionGPT reward vs heuristic-only reward. Motion-language similarity is computed using MotionGPT embeddings for fair comparison.}
+\label{tab:ablation}
+\begin{tabular}{llccc}
+\toprule
+\textbf{Environment} & \textbf{Reward Type} & \textbf{Reward} & \textbf{Length} & \textbf{Similarity} \\
+\midrule
+HalfCheetah & MotionGPT (Ours) & -789 $\pm$ 40 & 1000 & \textbf{0.525} \\
+ & Heuristic Only & -401 $\pm$ 47 & 1000 & 0.525 \\
+ & Random & -284 $\pm$ 82 & 1000 & -- \\
+\midrule
+Ant & MotionGPT (Ours) & 323 $\pm$ 159 & 780 & \textbf{0.477} \\
+ & Heuristic Only & 371 $\pm$ 49 & 1000 & 0.476 \\
+ & Random & -27 $\pm$ 30 & 71 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}

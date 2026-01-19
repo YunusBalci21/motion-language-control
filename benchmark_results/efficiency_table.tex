@@ -1,0 +1,15 @@
+\begin{table}[t]
+\centering
+\caption{Computational efficiency comparison. Our MotionGPT-based approach eliminates the render-to-CLIP bottleneck, achieving 28.8$\times$ speedup with 32.5$\times$ less GPU memory.}
+\label{tab:efficiency}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Time/Reward (ms)} & \textbf{Throughput (/s)} & \textbf{GPU Mem (MB)} \\
+\midrule
+CLIP + Rendering & 14.9 $\pm$ 2.2 & 67 & 599 \\
+\textbf{Ours (MotionGPT)} & \textbf{0.5} $\pm$ 0.1 & \textbf{1938} & \textbf{18} \\
+\midrule
+\textbf{Speedup} & \multicolumn{3}{c}{28.8$\times$ faster, 32.5$\times$ less memory} \\
+\bottomrule
+\end{tabular}
+\end{table}

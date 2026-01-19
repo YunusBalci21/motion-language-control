@@ -1,0 +1,73 @@
+{
+  "timestamp": "20260119_034745",
+  "environments": {
+    "halfcheetah": {
+      "env_key": "halfcheetah",
+      "env_name": "HalfCheetah-v4",
+      "instruction": "run forward",
+      "timesteps": 50000,
+      "configs": {
+        "motiongpt": {
+          "training_time_seconds": 543.9429795742035,
+          "mean_reward": -789.4100702024291,
+          "std_reward": 40.375177568287576,
+          "mean_length": 1000.0,
+          "std_length": 0.0,
+          "mean_similarity": 0.5254932117024694,
+          "std_similarity": 1.1102230246251565e-16
+        },
+        "heuristic": {
+          "training_time_seconds": 124.01077222824097,
+          "mean_reward": -400.6684245608058,
+          "std_reward": 47.4306559341499,
+          "mean_length": 1000.0,
+          "std_length": 0.0,
+          "mean_similarity": 0.5254932117024694,
+          "std_similarity": 1.1102230246251565e-16
+        },
+        "random": {
+          "training_time_seconds": 0,
+          "mean_reward": -283.9665960696181,
+          "std_reward": 81.92984694729128,
+          "mean_length": 1000.0,
+          "mean_similarity": 0.0
+        }
+      }
+    },
+    "ant": {
+      "env_key": "ant",
+      "env_name": "Ant-v4",
+      "instruction": "walk forward",
+      "timesteps": 50000,
+      "configs": {
+        "motiongpt": {
+          "training_time_seconds": 550.0585463047028,
+          "mean_reward": 323.36401764578267,
+          "std_reward": 158.73729736856262,
+          "mean_length": 780.5,
+          "std_length": 309.1912838357511,
+          "mean_similarity": 0.476720180778778,
+          "std_similarity": 0.0007362742474332453
+        },
+        "heuristic": {
+          "training_time_seconds": 133.97674894332886,
+          "mean_reward": 371.4128913884342,
+          "std_reward": 49.06489931843283,
+          "mean_length": 1000.0,
+          "std_length": 0.0,
+          "mean_similarity": 0.4764717711889538,
+          "std_similarity": 5.551115123125783e-17
+        },
+        "random": {
+          "training_time_seconds": 0,
+          "mean_reward": -27.15561712795938,
+          "std_reward": 29.762870707556512,
+          "mean_length": 70.6,
+          "mean_similarity": 0.0
+        }
+      }
+    }
+  },
+  "total_time_seconds": 1711.4837353229523,
+  "total_time_human": "0.5h"
+}
