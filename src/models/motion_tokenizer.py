@@ -61,12 +61,11 @@ class MotionTokenizer:
 
         if checkpoint_path and MOTIONGPT_AVAILABLE:
             try:
-                print(f"\n🚀 Loading MotionGPT from: {checkpoint_path}")
+                print(f"\n Loading MotionGPT from: {checkpoint_path}")
                 self.motiongpt_encoder = MotionGPTEncoder(checkpoint_path, device=device)
                 self.text_encoder = SimpleTextEncoder(device=device)
                 self.format_converter = MuJoCoToHumanML3DConverter()
-                print("✅ MotionGPT SUCCESSFULLY LOADED!")
-                print("🎯 Your thesis contribution is NOW ACTIVE!\n")
+                print("MotionGPT SUCCESSFULLY LOADED!")
             except Exception as e:
                 print(f"⚠ Warning: Could not load MotionGPT: {e}")
                 print("Falling back to heuristic rewards")
@@ -75,7 +74,7 @@ class MotionTokenizer:
             print("⚠ Warning: checkpoint_path provided but MotionGPT components not available")
             print("Please ensure motiongpt_vqvae_loader.py and mujoco_to_humanml3d_converter.py are in src/models/")
         else:
-            print("ℹ No checkpoint_path provided, using heuristic rewards only")
+            print("No checkpoint_path provided, using heuristic rewards only")
 
         self.motion_evaluator = MotionQualityEvaluator()
 
@@ -175,8 +174,6 @@ class MotionTokenizer:
                                            temporal_aggregation: str = "mean") -> float:
         """
         Compute similarity using MotionGPT (if available) or fallback to heuristic
-
-        THIS IS YOUR THESIS CONTRIBUTION!
         """
         # Convert to appropriate format
         if isinstance(motion_sequence, torch.Tensor):
@@ -213,7 +210,7 @@ class MotionTokenizer:
                 # Compute cosine similarity
                 similarity = compute_motion_text_similarity(motion_emb, text_emb)
 
-                # CRITICAL: This is the REAL motion-language alignment!
+                # Motion-language alignment
                 return float(similarity)
 
             except Exception as e:
@@ -244,7 +241,6 @@ class MotionTokenizer:
     def encode_instruction(self, instruction: str):
         """
         Encode instruction to embedding
-        NOW USES REAL TEXT ENCODER!
         """
         if self.text_encoder is not None:
             try:
@@ -261,7 +257,6 @@ class MotionTokenizer:
     def get_motion_embedding(self, motion):
         """
         Get motion embedding
-        NOW USES REAL MOTIONGPT ENCODER!
         """
         if self.motiongpt_encoder is not None:
             try:
@@ -312,8 +307,7 @@ if __name__ == "__main__":
     print(f"\nMotion-language similarity: {similarity:.3f}")
 
     if tokenizer.motiongpt_encoder is not None:
-        print("✅ MotionGPT integration WORKING!")
-        print("🎯 Your thesis contribution is ACTIVE!")
+        print("MotionGPT integration WORKING!")
     else:
         print("⚠ Using fallback heuristic rewards")
 

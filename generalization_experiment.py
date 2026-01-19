@@ -679,20 +679,20 @@ def main():
     print("=" * 70)
 
     if args.quick:
-        print("\n🚀 QUICK MODE: Evaluation only (~5-10 minutes)")
+        print("\n  QUICK MODE: Evaluation only (~5-10 minutes)")
         print("   Using pretrained models if available")
         envs = ['halfcheetah', 'ant']
         force_train = False
     elif args.full:
-        print("\n🔬 FULL MODE: Train + evaluate all environments (~4-5 hours)")
+        print("\n  FULL MODE: Train + evaluate all environments (~4-5 hours)")
         envs = ['halfcheetah', 'ant', 'walker2d']
         force_train = True
     elif args.env:
-        print(f"\n🎯 SINGLE ENV: {args.env}")
+        print(f"\n  SINGLE ENV: {args.env}")
         envs = [args.env]
         force_train = args.train
     else:
-        print("\n🚀 DEFAULT: Quick evaluation (~5-10 minutes)")
+        print("\n  DEFAULT: Quick evaluation (~5-10 minutes)")
         envs = ['halfcheetah', 'ant']
         force_train = False
 

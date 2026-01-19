@@ -7,7 +7,6 @@ This script measures and compares:
 2. GPU memory usage
 3. Throughput (rewards/second)
 
-For NeurIPS paper: "Continuous Control from Open-Vocabulary Feedback"
 Author: Yunus Emre Balci
 
 Usage:
@@ -122,13 +121,12 @@ class MotionGPTRewardBenchmark:
     """
     Benchmark for MotionGPT-based reward computation.
     
-    This is YOUR thesis contribution - direct motion-language alignment
-    without visual rendering.
+    Direct motion-language alignment without visual rendering.
     """
     
     def __init__(self, device: str = "cuda"):
         self.device = device
-        self.motion_dim = 30  # Your extracted features
+        self.motion_dim = 30
         self.embed_dim = 512
         
         # Simulate MotionGPT encoder (or load real one if available)
@@ -169,7 +167,6 @@ class MotionGPTRewardBenchmark:
             return self.instruction_cache[instruction]
         
         # Simulate text tokenization + encoding
-        # In real system: self.text_encoder.encode(instruction)
         dummy_text_features = torch.randn(1, 768, device=self.device)
         text_emb = self.text_encoder(dummy_text_features)
         text_emb = F.normalize(text_emb, dim=-1)
@@ -184,8 +181,6 @@ class MotionGPTRewardBenchmark:
     ) -> float:
         """
         Compute motion-language similarity reward.
-        
-        This is the CORE of your method - no rendering required!
         """
         # Convert motion to tensor
         motion_tensor = torch.from_numpy(motion_features).float().to(self.device)
@@ -227,8 +222,6 @@ class CLIPRewardBenchmark:
     1. Render the environment
     2. Encode the image with CLIP
     3. Compare to text embedding
-    
-    This is the EXPENSIVE baseline your method replaces.
     """
     
     def __init__(self, device: str = "cuda", use_real_clip: bool = True):
@@ -316,11 +309,11 @@ class CLIPRewardBenchmark:
         Compute CLIP-based reward.
         
         This involves:
-        1. Rendering the environment (EXPENSIVE)
-        2. Encoding the image with CLIP (EXPENSIVE)
+        1. Rendering the environment (Expensive)
+        2. Encoding the image with CLIP (Expensive)
         3. Computing similarity with text
         """
-        # Step 1: RENDER (this is the bottleneck!)
+        # Step 1: RENDER (this is the bottleneck)
         frame = self._render_frame()
         
         # Step 2: Encode image with CLIP
@@ -445,7 +438,7 @@ def run_full_benchmark(
     print(f"{'='*70}\n")
     
     # ========== MOTIONGPT BENCHMARK ==========
-    print("📊 Benchmarking MotionGPT-based reward (YOUR METHOD)...")
+    print("Benchmarking MotionGPT-based reward (Our method)...")
     print("-" * 50)
     
     reset_gpu_memory_stats()
@@ -464,7 +457,7 @@ def run_full_benchmark(
     
     # ========== CLIP BENCHMARK ==========
     print(f"\n{'='*50}")
-    print("📊 Benchmarking CLIP-based reward (BASELINE)...")
+    print("Benchmarking CLIP-based reward (BASELINE)...")
     print("-" * 50)
     
     reset_gpu_memory_stats()
@@ -496,7 +489,7 @@ def run_full_benchmark(
     
     # ========== PRINT RESULTS ==========
     print(f"\n{'='*70}")
-    print("📈 COMPARISON RESULTS")
+    print("COMPARISON RESULTS")
     print(f"{'='*70}")
     print(f"""
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -598,13 +591,13 @@ def main():
     if args.quick:
         iterations = 100
         warmup = 20
-        print("🚀 Running QUICK benchmark (100 iterations)")
+        print("Running QUICK benchmark (100 iterations)")
     else:
         iterations = args.iterations
         warmup = args.warmup
     
     # Check dependencies
-    print("\n📦 Checking dependencies...")
+    print("\n Checking dependencies...")
     print(f"  PyTorch: ✓ (CUDA: {torch.cuda.is_available()})")
     print(f"  CLIP (transformers): {'✓' if TRANSFORMERS_CLIP_AVAILABLE else '✗'}")
     
@@ -622,9 +615,8 @@ def main():
     )
     
     print(f"\n{'='*70}")
-    print("✅ BENCHMARK COMPLETE")
+    print("BENCHMARK COMPLETE")
     print(f"{'='*70}")
-    print(f"\n🎯 Key finding for your NeurIPS paper:")
     print(f"   Our method is {comparison.speedup_factor:.1f}x faster than CLIP-based approaches")
     print(f"   while using {comparison.memory_reduction_factor:.1f}x less GPU memory.\n")
 

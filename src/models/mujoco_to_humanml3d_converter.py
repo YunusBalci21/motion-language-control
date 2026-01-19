@@ -95,7 +95,6 @@ class MuJoCoToHumanML3DConverter:
 
         # Joint positions (9:72) - 21 joints * 3
         # We have 11 joint values, distribute them across the 21 joints
-        # This is a rough approximation since skeletons don't match
         joint_positions_extended = self._extend_joints(joints, target_size=63)
         humanml3d[:, 9:72] = joint_positions_extended
 
@@ -105,7 +104,6 @@ class MuJoCoToHumanML3DConverter:
         humanml3d[:, 74:75] = vz
 
         # Root angular velocity (75:78) - approximate from quaternion changes
-        # For now, use zeros (would need temporal derivative)
         humanml3d[:, 75:78] = 0.0
 
         # Joint velocities (78:141) - 21 joints * 3
@@ -119,12 +117,6 @@ class MuJoCoToHumanML3DConverter:
         humanml3d[:, 141:145] = foot_contacts
 
         # Additional features (145:259) - 114 dims
-        # These include things like:
-        # - Joint accelerations
-        # - Center of mass
-        # - Angular momentum
-        # - etc.
-        # For now, fill with normalized joint and velocity info
         additional_features = self._generate_additional_features(
             joints, vx, vy, vz, height, quat
         )
@@ -339,4 +331,4 @@ if __name__ == "__main__":
 
     assert batch_humanml3d.shape == (4, 20, 259), "Batch shape mismatch!"
 
-    print("\n✅ MuJoCo to HumanML3D converter test passed!")
+    print("\nMuJoCo to HumanML3D converter test passed!")

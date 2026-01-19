@@ -3,7 +3,7 @@
 Ablation Study: MotionGPT vs Heuristic Rewards
 
 This script compares three reward configurations:
-1. MotionGPT (Full) - Your method with motion-language alignment
+1. MotionGPT - Your method with motion-language alignment
 2. Heuristic Only - Hand-crafted rewards without MotionGPT
 3. Random Baseline - Untrained policy for reference
 
@@ -97,7 +97,7 @@ ENVIRONMENTS = {
     ),
 }
 
-# PPO hyperparameters (same as your main experiments for fair comparison)
+# PPO hyperparameters
 PPO_CONFIG = {
     "learning_rate": 3e-4,
     "n_steps": 2048,
@@ -163,8 +163,6 @@ class HeuristicOnlyWrapper(gym.Wrapper):
     def _compute_heuristic_reward(self, obs: np.ndarray, action: np.ndarray, info: dict) -> float:
         """
         Compute hand-crafted heuristic reward.
-
-        This is what you'd use WITHOUT MotionGPT - just velocity matching.
         """
         reward = 0.0
 
@@ -219,9 +217,7 @@ class HeuristicOnlyWrapper(gym.Wrapper):
 
 class MotionGPTRewardWrapper(gym.Wrapper):
     """
-    FULL METHOD: MotionGPT-based motion-language reward.
-
-    This is YOUR method - using motion-language alignment.
+    MotionGPT-based motion-language reward.
     """
 
     def __init__(self, env: gym.Env, instruction: str = "walk forward",
@@ -439,9 +435,9 @@ def run_ablation_experiment(
         except ImportError:
             print("⚠ MotionTokenizer not available")
 
-    # ========== CONFIG 1: MotionGPT (Full Method) ==========
+    # CONFIG 1: MotionGPT
     print(f"\n{'=' * 60}")
-    print(f"CONFIG 1: MotionGPT Reward (YOUR METHOD)")
+    print(f"CONFIG 1: MotionGPT Reward (Our method)")
     print(f"{'=' * 60}")
 
     def make_motiongpt_env():
@@ -707,7 +703,7 @@ def main():
     print("=" * 70)
 
     if args.quick:
-        print("\n🚀 QUICK MODE: ~30-45 minutes")
+        print("\n QUICK MODE: ~30-45 minutes")
         envs = ['halfcheetah', 'ant']
         multiplier = 0.25  # 50K steps
     elif args.full:
@@ -715,12 +711,12 @@ def main():
         envs = ['halfcheetah', 'ant', 'walker2d']
         multiplier = 1.0  # Full timesteps
     elif args.env:
-        print(f"\n🎯 SINGLE ENV: {args.env}")
+        print(f"\n SINGLE ENV: {args.env}")
         envs = [args.env]
         multiplier = 0.5 if args.timesteps is None else args.timesteps / ENVIRONMENTS[args.env].timesteps
     else:
         # Default: quick mode
-        print("\n🚀 DEFAULT: Quick mode (~30-45 minutes)")
+        print("\n DEFAULT: Quick mode (~30-45 minutes)")
         envs = ['halfcheetah', 'ant']
         multiplier = 0.25
 

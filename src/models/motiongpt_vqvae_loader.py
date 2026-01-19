@@ -65,7 +65,7 @@ class MotionGPTEncoder:
         # VQ-VAE configuration (from checkpoint architecture)
         # Note: This checkpoint uses 259 features, not 263 (HumanML3D standard)
         self.vqvae = VQVae(
-            nfeats=259,  # From checkpoint (not 263!)
+            nfeats=259,  # From checkpoint (not 263)
             quantizer="ema_reset",
             code_num=1024,  # Codebook size (CB1024)
             code_dim=512,  # Code dimension
@@ -81,7 +81,6 @@ class MotionGPTEncoder:
         ).to(device)
 
         # --- FORCE FIX FOR KERNEL MISMATCH ---
-        # The external library likely ignores the kernel_size arg, so we manually patch it.
         try:
             # Inspect the first layer of the encoder (model.0)
             # Structure is usually self.vqvae.encoder.model[0]
@@ -140,7 +139,7 @@ class MotionGPTEncoder:
         # Set to eval mode
         self.vqvae.eval()
 
-        print("✅ MotionGPT VQ-VAE encoder loaded successfully!")
+        print("MotionGPT VQ-VAE encoder loaded successfully!")
 
     def normalize(self, motion_features: torch.Tensor) -> torch.Tensor:
         """Normalize motion features using HumanML3D stats"""

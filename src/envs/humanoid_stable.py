@@ -395,14 +395,14 @@ class StabilityWrapper(gym.Wrapper):
 
             reward += stability_reward
 
-            # Extra bonus for really good posture
+            # Extra bonus for good posture
             if z > self.target_height - 0.1 and abs(pitch) < 0.15 and abs(roll) < 0.15:
                 reward += 1.0
 
         # Update tracking
         self.episode_return += reward
 
-        # Add info (always include state info, regardless of reward_shaping)
+        # Add info
         info.update({
             'height': z,
             'pitch': pitch,
@@ -509,7 +509,7 @@ def make_stable_humanoid(
         target_height=target_height,
         min_height=min_height,
         initial_noise_scale=initial_noise,
-        reward_shaping=reward_shaping,  # NEW: Can disable reward modification
+        reward_shaping=reward_shaping,  # Can disable reward modification
     )
 
     # Add time limit
@@ -562,7 +562,7 @@ def ensure_wrapped_humanoid_registered():
 
     try:
         gym.spec(env_id)
-        return  # Already registered
+        return  
     except gym.error.NameNotFound:
         pass
 

@@ -28,7 +28,7 @@ class PDActionWrapper(gym.ActionWrapper):
         self.kd = kd
         # map actuators -> joints -> qpos/qvel indices
         model = env.unwrapped.model
-        # actuator_trnid gives (joint_id, parent) — we take joint id
+        # actuator_trnid gives (joint_id, parent) - we take joint id
         self.act_joint_ids = model.actuator_trnid[:, 0].astype(int)
         self.qpos_adr = model.jnt_qposadr[self.act_joint_ids].astype(int)
         self.qvel_adr = model.jnt_dofadr[self.act_joint_ids].astype(int)

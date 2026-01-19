@@ -55,7 +55,7 @@ class ChainOfThoughtLLM:
     """
 
     # HuggingFace token - REPLACE WITH YOUR OWN
-    HF_TOKEN = "******REMOVED******xKtdAamhcRUkFeugbAjPTtvCPjeMXhxUCE"  # <-- PLACE YOUR TOKEN HERE
+    HF_TOKEN = ""  # <-- PLACE YOUR TOKEN HERE
 
     COMMAND_PROMPT = """You are a robot motion controller. Interpret the user's request and output motion commands.
 
@@ -323,7 +323,7 @@ class AdaptiveMotionLanguageWrapper(gym.Wrapper):
         self.weights = {
             "stability": 0.25,
             "task": 0.15,
-            "language": 0.50,  # MotionGPT similarity - main contribution
+            "language": 0.50,  # MotionGPT similarity
             "consistency": 0.10,
             "energy_penalty": 0.001,
             "speed_target": 0.8,  # Target forward speed
@@ -511,7 +511,7 @@ class AdaptiveMotionLanguageWrapper(gym.Wrapper):
 
 class FeedbackLearningSystem:
     """
-    The core thesis contribution: Learning from natural language feedback.
+    Learning from natural language feedback.
 
     Pipeline:
     1. LLM interprets command with chain-of-thought
@@ -531,7 +531,7 @@ class FeedbackLearningSystem:
             device: str = "cuda",
     ):
         print("\n" + "=" * 70)
-        print("🎯 FEEDBACK LEARNING SYSTEM")
+        print("   FEEDBACK LEARNING SYSTEM")
         print("   Continuous Control from Open-Vocabulary Feedback")
         print("=" * 70)
 
@@ -540,11 +540,11 @@ class FeedbackLearningSystem:
         self.model_path = model_path
 
         # Initialize LLM
-        print("\n📦 Loading LLM...")
+        print("\n  Loading LLM...")
         self.llm = ChainOfThoughtLLM()
 
         # Load MotionGPT tokenizer
-        print("\n📦 Loading MotionGPT...")
+        print("\n  Loading MotionGPT...")
         from models.motion_tokenizer import MotionTokenizer
         self.motion_tokenizer = MotionTokenizer(
             device=device,
@@ -552,7 +552,7 @@ class FeedbackLearningSystem:
         )
 
         # Load base model
-        print("\n📦 Loading trained model...")
+        print("\n  Loading trained model...")
         self.base_model = PPO.load(model_path, device=device)
         self.current_model = PPO.load(model_path, device=device)
 
@@ -573,7 +573,7 @@ class FeedbackLearningSystem:
         self.feedback_history = []
         self.execution_history = []
 
-        print("\n✅ System ready!")
+        print("\n  System ready!")
         print(f"   Environment: {env_name}")
         print(f"   Model: {model_path}")
         print("=" * 70)
@@ -612,7 +612,7 @@ class FeedbackLearningSystem:
         """Execute current policy and return results."""
 
         mode_str = "LIVE" if live else ("recording" if record else "")
-        print(f"\n🏃 Executing: '{instruction}' for {steps} steps {mode_str}")
+        print(f"\n  Executing: '{instruction}' for {steps} steps {mode_str}")
         print(f"   Current weights: {self._weights_str()}")
 
         # Pass steps to create env with higher max_episode_steps if needed
@@ -653,7 +653,7 @@ class FeedbackLearningSystem:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             video_path = f"{video_dir}/{instruction.replace(' ', '_')}_{timestamp}.mp4"
             imageio.mimsave(video_path, frames, fps=30)
-            print(f"   📹 Video saved: {video_path}")
+            print(f"     Video saved: {video_path}")
 
         result = {
             "instruction": instruction,
@@ -667,7 +667,7 @@ class FeedbackLearningSystem:
 
         self.execution_history.append(result)
 
-        print(f"\n   ✅ Result: reward={result['mean_reward']:.2f}, "
+        print(f"\n     Result: reward={result['mean_reward']:.2f}, "
               f"similarity={result['mean_similarity']:.3f} (max: {result['max_similarity']:.3f})")
 
         return result
@@ -691,7 +691,7 @@ class FeedbackLearningSystem:
     def process_feedback(self, feedback: str) -> Dict:
         """Process natural language feedback through LLM and adjust reward weights."""
 
-        print(f"\n💬 Processing feedback: \"{feedback}\"")
+        print(f"\n  Processing feedback: \"{feedback}\"")
 
         if self.current_instruction is None:
             print("   ⚠ No instruction set. Give a command first.")
@@ -702,7 +702,7 @@ class FeedbackLearningSystem:
         adjustments = interpretation["adjustments"]
 
         if adjustments.get("positive"):
-            print("   ✅ Positive feedback - keeping current settings")
+            print("     Positive feedback - keeping current settings")
             return {"action": "none", "interpretation": interpretation}
 
         if not adjustments:
@@ -710,7 +710,7 @@ class FeedbackLearningSystem:
             return {"action": "none", "interpretation": interpretation}
 
         # Apply LLM-interpreted adjustments
-        print(f"\n   📊 Adjusting reward weights based on feedback:")
+        print(f"\n     Adjusting reward weights based on feedback:")
         self._apply_adjustments(adjustments)
 
         self.feedback_history.append({
@@ -830,11 +830,11 @@ class FeedbackLearningSystem:
 
         vec_env.close()
 
-        print(f"   ✅ Fine-tuning complete!")
+        print(f"     Fine-tuning complete!")
 
     def reset_to_base(self):
         """Reset model to original trained weights."""
-        print("\n🔄 Resetting to base model...")
+        print("\n  Resetting to base model...")
         self.current_model = PPO.load(self.model_path, device=self.device)
         self.current_weights = {
             "stability": 0.25,
@@ -844,7 +844,7 @@ class FeedbackLearningSystem:
             "energy_penalty": 0.001,
             "speed_target": 0.8,
         }
-        print("   ✅ Reset complete")
+        print("     Reset complete")
 
     def _weights_str(self) -> str:
         return (f"stab={self.current_weights['stability']:.2f}, "
@@ -861,7 +861,7 @@ class FeedbackLearningSystem:
         }
         with open(path, "w") as f:
             json.dump(session, f, indent=2)
-        print(f"✅ Session saved to {path}")
+        print(f"  Session saved to {path}")
 
 
 # ============================================================================
@@ -872,7 +872,7 @@ def run_interactive_demo():
     """Run interactive feedback loop demo."""
 
     print("\n" + "=" * 70)
-    print("🤖 INTERACTIVE FEEDBACK LEARNING DEMO")
+    print("  INTERACTIVE FEEDBACK LEARNING DEMO")
     print("=" * 70)
     print("""
 This demo shows the CORE THESIS CONTRIBUTION:
@@ -932,15 +932,15 @@ EXAMPLE SESSION:
             # Handle commands
             if user_input.lower() in ["!quit", "!exit", "quit", "exit"]:
                 system.save_session()
-                print("\n👋 Goodbye!")
+                print("\n  Goodbye!")
                 break
 
             if user_input.lower() == "!weights":
-                print(f"\n📊 Current weights: {system._weights_str()}")
+                print(f"\n  Current weights: {system._weights_str()}")
                 continue
 
             if user_input.lower() == "!history":
-                print("\n📜 Feedback history:")
+                print("\n  Feedback history:")
                 for i, fb in enumerate(system.feedback_history):
                     interp = fb.get('interpretation', fb.get('parsed', {}))
                     adj = interp.get('adjustments', interp.get('matched_patterns', []))
@@ -954,26 +954,26 @@ EXAMPLE SESSION:
 
             if user_input.lower() == "!record on":
                 recording = True
-                print("📹 Recording: ON")
+                print("  Recording: ON")
                 continue
 
             if user_input.lower() == "!record off":
                 recording = False
-                print("📹 Recording: OFF")
+                print("  Recording: OFF")
                 continue
 
             if user_input.lower() == "!live on":
                 live_mode = True
-                print("🖥️ Live rendering: ON")
+                print("  Live rendering: ON")
                 continue
 
             if user_input.lower() == "!live off":
                 live_mode = False
-                print("🖥️ Live rendering: OFF")
+                print("  Live rendering: OFF")
                 continue
 
             if user_input.lower() == "!envs" or user_input.lower() == "!environments":
-                print("\n🌍 Available environments:")
+                print("\n  Available environments:")
                 print("   ant        - Quadruped (most stable, recommended)")
                 print("   humanoid   - Bipedal humanoid (challenging)")
                 print("   halfcheetah - 2D runner (fast)")
@@ -1002,7 +1002,7 @@ EXAMPLE SESSION:
 
                 env_name, model_path = env_configs[env_key]
 
-                print(f"\n🔄 Switching to {env_key}...")
+                print(f"\n  Switching to {env_key}...")
                 system.env_name = env_name
                 system.model_path = model_path
 
@@ -1020,7 +1020,7 @@ EXAMPLE SESSION:
                         "speed_target": 0.8,
                     }
                     current_instruction = None
-                    print(f"✅ Now using: {env_name}")
+                    print(f"  Now using: {env_name}")
                     print(f"   Model: {model_path}")
                 except Exception as e:
                     print(f"⚠ Failed to load model: {e}")
@@ -1043,7 +1043,7 @@ EXAMPLE SESSION:
                 system.fine_tune(current_instruction, training_steps=steps)
 
                 # Execute again to show improvement
-                print("\n🔄 Executing again to show improvement...")
+                print("\n  Executing again to show improvement...")
                 system.execute(current_instruction, steps=200, record=recording, live=live_mode)
                 continue
 
@@ -1063,7 +1063,7 @@ EXAMPLE SESSION:
                 clean_input = " ".join([p for p in parts if not p.isdigit() and p.lower() != "steps"])
 
                 # Use LLM to interpret
-                print(f"\n🧠 LLM interpreting: \"{clean_input}\"")
+                print(f"\n  LLM interpreting: \"{clean_input}\"")
                 interpretation = system.llm.interpret_command(clean_input)
 
                 current_instruction = interpretation['commands'][0] if interpretation['commands'] else clean_input
@@ -1116,7 +1116,7 @@ EXAMPLE SESSION:
 
                 env_name, model_path = env_configs[detected_env]
 
-                print(f"\n🔄 Switching to {detected_env}...")
+                print(f"\n  Switching to {detected_env}...")
                 system.env_name = env_name
                 system.model_path = model_path
 
@@ -1127,7 +1127,7 @@ EXAMPLE SESSION:
                         "stability": 0.25, "task": 0.15, "language": 0.50,
                         "consistency": 0.10, "energy_penalty": 0.001, "speed_target": 0.8,
                     }
-                    print(f"✅ Now using: {env_name}")
+                    print(f"  Now using: {env_name}")
 
                     # Check if they also want to run a command
                     motion_words = ["walk", "run", "turn", "stop", "hop", "forward", "backward"]
@@ -1135,7 +1135,7 @@ EXAMPLE SESSION:
 
                     if has_motion:
                         # Extract and run the command
-                        print(f"\n🧠 LLM interpreting command...")
+                        print(f"\n  LLM interpreting command...")
                         interpretation = system.llm.interpret_command(user_input)
                         current_instruction = interpretation['commands'][0] if interpretation[
                             'commands'] else "walk forward"
@@ -1165,7 +1165,7 @@ EXAMPLE SESSION:
 
                 system.fine_tune(current_instruction, training_steps=steps)
 
-                print("\n🔄 Executing again to show improvement...")
+                print("\n  Executing again to show improvement...")
                 system.execute(current_instruction, steps=200, record=recording, live=live_mode)
                 continue
 
@@ -1183,7 +1183,7 @@ EXAMPLE SESSION:
                 clean_input = " ".join([p for p in parts if not p.isdigit() and p.lower() != "steps"])
 
                 # First input - use LLM to interpret as command
-                print(f"\n🧠 LLM interpreting: \"{clean_input}\"")
+                print(f"\n  LLM interpreting: \"{clean_input}\"")
                 interpretation = system.llm.interpret_command(clean_input)
 
                 current_instruction = interpretation['commands'][0] if interpretation['commands'] else clean_input
@@ -1214,14 +1214,14 @@ EXAMPLE SESSION:
 
                 if is_feedback:
                     # Use LLM to interpret feedback
-                    print(f"\n🧠 LLM interpreting feedback: \"{user_input}\"")
+                    print(f"\n  LLM interpreting feedback: \"{user_input}\"")
                     interpretation = system.llm.interpret_feedback(user_input)
 
                     if interpretation.get('is_positive') or not interpretation.get('adjustments'):
-                        print("   ✅ Positive feedback - keeping current settings")
+                        print("     Positive feedback - keeping current settings")
                     else:
                         # Apply adjustments
-                        print("\n   📊 Applying adjustments:")
+                        print("\n     Applying adjustments:")
                         system._apply_llm_adjustments(interpretation['adjustments'])
 
                         # Save to history
@@ -1233,10 +1233,10 @@ EXAMPLE SESSION:
                         })
 
                         # AUTO-TRAIN with new weights!
-                        print("\n🔧 Auto-training with adjusted rewards (5000 steps)...")
+                        print("\n  Auto-training with adjusted rewards (5000 steps)...")
                         system.fine_tune(current_instruction, training_steps=5000, show_progress=True)
 
-                        print("\n🔄 Executing again to show improvement...")
+                        print("\n  Executing again to show improvement...")
                         system.execute(current_instruction, steps=300, record=recording, live=live_mode)
                 else:
                     # New instruction - extract step count from anywhere
@@ -1251,7 +1251,7 @@ EXAMPLE SESSION:
                     clean_input = " ".join([p for p in parts if not p.isdigit() and p.lower() != "steps"])
 
                     # Use LLM to interpret
-                    print(f"\n🧠 LLM interpreting: \"{clean_input}\"")
+                    print(f"\n  LLM interpreting: \"{clean_input}\"")
                     interpretation = system.llm.interpret_command(clean_input)
 
                     current_instruction = interpretation['commands'][0] if interpretation['commands'] else clean_input
@@ -1259,7 +1259,7 @@ EXAMPLE SESSION:
                     system.execute(current_instruction, steps=steps, record=recording, live=live_mode)
 
         except KeyboardInterrupt:
-            print("\n\n👋 Interrupted. Saving session...")
+            print("\n\n  Interrupted. Saving session...")
             system.save_session()
             break
 
